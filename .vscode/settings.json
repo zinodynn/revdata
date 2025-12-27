@@ -1,0 +1,63 @@
+{
+    // Python 设置
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/backend"
+    ],
+    "python.envFile": "${workspaceFolder}/backend/.env",
+    // 编辑器设置
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": null,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit"
+    },
+    // Python 格式化
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.tabSize": 4
+    },
+    // TypeScript/React 设置
+    "[typescript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.tabSize": 2
+    },
+    "[typescriptreact]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.tabSize": 2
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.tabSize": 2
+    },
+    "[json]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.tabSize": 2
+    },
+    // 文件关联
+    "files.associations": {
+        "*.env": "dotenv",
+        "*.env.*": "dotenv"
+    },
+    // 排除目录
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/node_modules": true,
+        "**/.venv": true,
+        "**/venv": true
+    },
+    // 搜索排除
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/venv": true,
+        "**/__pycache__": true,
+        "**/dist": true
+    },
+    // ESLint 设置
+    "eslint.workingDirectories": [
+        "frontend"
+    ],
+    // TypeScript 设置
+    "typescript.tsdk": "frontend/node_modules/typescript/lib"
+}

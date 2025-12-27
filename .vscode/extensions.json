@@ -1,0 +1,22 @@
+{
+    "recommendations": [
+        // Python
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-python.black-formatter",
+        "ms-python.pylint",
+        // JavaScript/TypeScript
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        // React
+        "dsznajder.es7-react-js-snippets",
+        // Docker
+        "ms-azuretools.vscode-docker",
+        // Database
+        "cweijan.vscode-postgresql-client2",
+        // 其他
+        "mikestead.dotenv",
+        "eamodio.gitlens",
+        "usernamehw.errorlens"
+    ]
+}

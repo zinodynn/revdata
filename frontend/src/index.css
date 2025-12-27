@@ -1,0 +1,118 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* 差异显示样式 */
+.diff-added {
+  background-color: #e6ffed;
+  color: #22863a;
+}
+
+.diff-removed {
+  background-color: #ffeef0;
+  color: #cb2431;
+  text-decoration: line-through;
+}
+
+/* 卡片样式 */
+.review-card {
+  margin-bottom: 16px;
+  transition: all 0.3s ease;
+  border-radius: 12px;
+}
+
+.review-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.review-card.active {
+  border: 2px solid #1890ff;
+  box-shadow: 0 4px 20px rgba(24, 144, 255, 0.2);
+}
+
+/* QA分栏样式 */
+.qa-container {
+  display: flex;
+  gap: 24px;
+}
+
+.qa-column {
+  flex: 1;
+  padding: 20px;
+  border-radius: 12px;
+  min-height: 200px;
+}
+
+.qa-question {
+  background: linear-gradient(135deg, #f0f5ff 0%, #e6f0ff 100%);
+  border: 1px solid #adc6ff;
+}
+
+.qa-answer {
+  background: linear-gradient(135deg, #f6ffed 0%, #e8ffe0 100%);
+  border: 1px solid #b7eb8f;
+}
+
+/* 快捷键提示 */
+.shortcut-hint {
+  font-size: 11px;
+  color: #999;
+  margin-left: 8px;
+  font-weight: normal;
+}
+
+/* diff viewer 增强样式 */
+.review-card .diff-viewer {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .qa-container {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .qa-column {
+    min-height: auto;
+  }
+}
+
+/* 内容区域样式 */
+.content-display {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+/* 编辑器样式 */
+.review-card textarea {
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+/* 统计卡片样式 */
+.ant-statistic-title {
+  font-size: 13px;
+}
+
+.ant-statistic-content {
+  font-size: 24px;
+}
