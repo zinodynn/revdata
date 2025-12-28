@@ -1,19 +1,23 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { ExportOutlined, EyeOutlined, MoreOutlined, PlusOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons'
 import {
-  Table,
-  Button,
-  Card,
-  Space,
-  Tag,
-  Modal,
-  Form,
-  Input,
-  Upload,
-  message,
-  Typography,
+    Button,
+    Card,
+    Dropdown,
+    Form,
+    Input,
+    message,
+    Modal,
+    Space,
+    Spin,
+    Steps,
+    Table,
+    Tag,
+    Typography,
+    Upload,
 } from 'antd'
-import { PlusOutlined, UploadOutlined, EyeOutlined } from '@ant-design/icons'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import { datasetsApi } from '../services/api'
 
 const { Title } = Typography
@@ -49,6 +53,14 @@ export default function DatasetsPage() {
   const [loading, setLoading] = useState(false)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [currentStep, setCurrentStep] = useState(0)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [detectedFields, setDetectedFields] = useState<string[]>([])
+  const [sampleData, setSampleData] = useState<any[]>([])
+  const [suggestedMapping, setSuggestedMapping] = useState<FieldMapping | null>(null)
+  const [fieldMapping, setFieldMapping] = useState<FieldMapping | null>(null)
+  const [reviewConfig, setReviewConfig] = useState<ReviewConfig | null>(null)
+  const [detecting, setDetecting] = useState(false)
   const [form] = Form.useForm()
   const navigate = useNavigate()
 
@@ -69,24 +81,62 @@ export default function DatasetsPage() {
   }, [])
 
   const handleUpload = async (values: any) => {
-    const file = values.file?.fileList?.[0]?.originFileObj
-    if (!file) {
+    if (!selectedFile) {
       message.error('请选择文件')
       return
     }
 
     setUploading(true)
     try {
-      await datasetsApi.upload(file, values.name, values.description)
+      const res = await datasetsApi.upload(selectedFile, values.name, values.description)
+      const datasetId = res.data.id
+
+      // 如果有字段映射配置，更新数据集
+      if (fieldMapping) {
+        await datasetsApi.update(datasetId, {
+          field_mapping: fieldMapping,
+          review_config: reviewConfig || undefined,
+        })
+      }
+
       message.success('上传成功')
-      setUploadModalOpen(false)
-      form.resetFields()
+      handleCloseModal()
       fetchDatasets()
     } catch (error: any) {
       message.error(error.response?.data?.detail || '上传失败')
     } finally {
       setUploading(false)
     }
+  }
+
+  const handleFileSelect = async (file: File) => {
+    setSelectedFile(file)
+    setDetecting(true)
+    try {
+      const res = await datasetsApi.detectFields(file)
+      setDetectedFields(res.data.detected_fields)
+      setSampleData(res.data.sample_data)
+      setSuggestedMapping(res.data.suggested_mapping)
+      setFieldMapping(res.data.suggested_mapping)
+      setCurrentStep(1)
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '文件解析失败')
+    } finally {
+      setDetecting(false)
+    }
+    return false
+  }
+
+  const handleCloseModal = () => {
+    setUploadModalOpen(false)
+    setCurrentStep(0)
+    setSelectedFile(null)
+    setDetectedFields([])
+    setSampleData([])
+    setSuggestedMapping(null)
+    setFieldMapping(null)
+    setReviewConfig(null)
+    form.resetFields()
   }
 
   const columns = [
@@ -126,15 +176,38 @@ export default function DatasetsPage() {
     },
     {
       title: '操作',
-      width: 120,
+      width: 180,
       render: (_: any, record: Dataset) => (
-        <Button
-          type="link"
-          icon={<EyeOutlined />}
-          onClick={() => navigate(`/datasets/${record.id}/review`)}
-        >
-          审核
-        </Button>
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/datasets/${record.id}/review`)}
+          >
+            审核
+          </Button>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'detail',
+                  icon: <SettingOutlined />,
+                  label: '配置',
+                  onClick: () => navigate(`/datasets/${record.id}`),
+                },
+                {
+                  key: 'export',
+                  icon: <ExportOutlined />,
+                  label: '导出',
+                  onClick: () => navigate(`/datasets/${record.id}`),
+                },
+              ],
+            }}
+          >
+            <Button type="text" icon={<MoreOutlined />} />
+          </Dropdown>
+        </Space>
       ),
     },
   ]
@@ -163,34 +236,109 @@ export default function DatasetsPage() {
       <Modal
         title="上传数据集"
         open={uploadModalOpen}
-        onCancel={() => setUploadModalOpen(false)}
+        onCancel={handleCloseModal}
         footer={null}
+        width={800}
+        destroyOnClose
       >
-        <Form form={form} layout="vertical" onFinish={handleUpload}>
-          <Form.Item name="name" label="数据集名称" rules={[{ required: true }]}>
-            <Input placeholder="请输入数据集名称" />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea placeholder="可选描述" rows={3} />
-          </Form.Item>
-          <Form.Item
-            name="file"
-            label="数据文件"
-            rules={[{ required: true, message: '请上传文件' }]}
-          >
-            <Upload beforeUpload={() => false} maxCount={1} accept=".jsonl,.json,.csv,.tsv">
-              <Button icon={<UploadOutlined />}>选择文件 (JSONL/JSON/CSV/TSV)</Button>
-            </Upload>
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" loading={uploading}>
-                上传
+        <Steps
+          current={currentStep}
+          style={{ marginBottom: 24 }}
+          items={[
+            { title: '选择文件' },
+            { title: '配置字段映射' },
+            { title: '确认上传' },
+          ]}
+        />
+
+        {currentStep === 0 && (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            {detecting ? (
+              <Spin tip="正在解析文件..." />
+            ) : (
+              <Upload.Dragger
+                beforeUpload={handleFileSelect}
+                showUploadList={false}
+                accept=".jsonl,.json,.csv,.tsv"
+              >
+                <p className="ant-upload-drag-icon">
+                  <UploadOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+                </p>
+                <p className="ant-upload-text">点击或拖拽文件到此处</p>
+                <p className="ant-upload-hint">支持 JSONL、JSON、CSV、TSV 格式</p>
+              </Upload.Dragger>
+            )}
+          </div>
+        )}
+
+        {currentStep === 1 && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Tag color="blue">{selectedFile?.name}</Tag>
+              <Button type="link" onClick={() => setCurrentStep(0)}>
+                重新选择
               </Button>
-              <Button onClick={() => setUploadModalOpen(false)}>取消</Button>
-            </Space>
-          </Form.Item>
-        </Form>
+            </div>
+            <FieldMappingConfig
+              detectedFields={detectedFields}
+              sampleData={sampleData}
+              initialMapping={suggestedMapping || undefined}
+              onChange={(mapping, config) => {
+                setFieldMapping(mapping)
+                setReviewConfig(config)
+              }}
+              showPreview
+            />
+            <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <Space>
+                <Button onClick={() => setCurrentStep(0)}>上一步</Button>
+                <Button type="primary" onClick={() => setCurrentStep(2)}>
+                  下一步
+                </Button>
+              </Space>
+            </div>
+          </div>
+        )}
+
+        {currentStep === 2 && (
+          <Form form={form} layout="vertical" onFinish={handleUpload}>
+            <Form.Item
+              name="name"
+              label="数据集名称"
+              rules={[{ required: true }]}
+              initialValue={selectedFile?.name.replace(/\.[^/.]+$/, '')}
+            >
+              <Input placeholder="请输入数据集名称" />
+            </Form.Item>
+            <Form.Item name="description" label="描述">
+              <Input.TextArea placeholder="可选描述" rows={3} />
+            </Form.Item>
+            <Card size="small" title="字段映射预览" style={{ marginBottom: 16 }}>
+              <Space wrap>
+                {fieldMapping?.question_field && (
+                  <Tag color="blue">问题: {fieldMapping.question_field}</Tag>
+                )}
+                {fieldMapping?.answer_field && (
+                  <Tag color="green">回答: {fieldMapping.answer_field}</Tag>
+                )}
+                {fieldMapping?.thinking_field && (
+                  <Tag color="gold">思考: {fieldMapping.thinking_field}</Tag>
+                )}
+                {fieldMapping?.display_mode && (
+                  <Tag>模式: {fieldMapping.display_mode}</Tag>
+                )}
+              </Space>
+            </Card>
+            <Form.Item>
+              <Space>
+                <Button onClick={() => setCurrentStep(1)}>上一步</Button>
+                <Button type="primary" htmlType="submit" loading={uploading}>
+                  确认上传
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
       </Modal>
     </div>
   )

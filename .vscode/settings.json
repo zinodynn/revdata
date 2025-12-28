@@ -17,6 +17,11 @@
         "editor.defaultFormatter": "ms-python.black-formatter",
         "editor.tabSize": 4
     },
+    // markdown preview settings
+    "[markdown]": {
+        "editor.defaultFormatter": "vstirbu.vscode-mermaid-preview",
+        "editor.tabSize": 2
+    },
     // TypeScript/React 设置
     "[typescript]": {
         "editor.defaultFormatter": "esbenp.prettier-vscode",

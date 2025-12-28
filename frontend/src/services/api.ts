@@ -34,6 +34,18 @@ api.interceptors.response.use(
 
 export default api
 
+// 无认证API实例 - 用于授权码等公开访问
+const publicApi = axios.create({
+  baseURL: '/api/v1',
+  timeout: 30000,
+})
+
+// 公开API不自动跳转登录
+publicApi.interceptors.response.use(
+  (response) => response,
+  (error) => Promise.reject(error)
+)
+
 // Auth API
 export const authApi = {
   login: (username: string, password: string) => {
@@ -56,12 +68,26 @@ export const datasetsApi = {
   list: (page = 1, pageSize = 20) =>
     api.get('/datasets', { params: { page, page_size: pageSize } }),
   get: (id: number) => api.get(`/datasets/${id}`),
+  update: (id: number, data: {
+    name?: string
+    description?: string
+    field_mapping?: any
+    review_config?: any
+    status?: string
+  }) => api.put(`/datasets/${id}`, data),
   upload: (file: File, name: string, description?: string) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('name', name)
     if (description) formData.append('description', description)
     return api.post('/datasets/upload', formData)
+  },
+  preview: (id: number, count = 5) =>
+    api.get(`/datasets/${id}/preview`, { params: { count } }),
+  detectFields: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/datasets/detect-fields', formData)
   },
 }
 
@@ -109,5 +135,60 @@ export const exportApi = {
     api.get(`/export/${datasetId}`, {
       params: options,
       responseType: 'blob',
+    }),
+}
+
+// Users API (管理员)
+export const usersApi = {
+  list: () => api.get('/users'),
+  get: (id: number) => api.get(`/users/${id}`),
+  create: (data: { username: string; email: string; password: string; role: string }) =>
+    api.post('/users', data),
+  update: (id: number, data: { username?: string; email?: string; role?: string }) =>
+    api.put(`/users/${id}`, data),
+  delete: (id: number) => api.delete(`/users/${id}`),
+  resetPassword: (id: number) => api.post(`/users/${id}/reset-password`),
+}
+
+// Auth Code API (授权码) - 使用无认证API
+export const authCodeApi = {
+  create: (data: {
+    dataset_id: number
+    item_start: number
+    item_end: number
+    max_online?: number
+    max_verify_count?: number
+    expires_at?: string
+  }) => api.post('/auth-codes', data),
+  list: (datasetId: number) => api.get(`/auth-codes/dataset/${datasetId}`),
+  verify: (code: string) => publicApi.post(`/auth-codes/${code}/verify`),
+  revoke: (id: number) => api.delete(`/auth-codes/${id}`),
+  getReviewedItems: (code: string) => api.get(`/auth-codes/${code}/reviewed`),
+  leave: (sessionToken: string) => publicApi.post('/auth-codes/session/leave', null, {
+    params: { session_token: sessionToken },
+  }),
+  recordReview: (code: string, data: { item_id: number; action: string; session_token?: string }) =>
+    publicApi.post(`/auth-codes/${code}/record-review`, null, {
+      params: data,
+    }),
+}
+
+// 公开Items API - 用于授权码访问
+export const publicItemsApi = {
+  getBySeq: (datasetId: number, seqNum: number, sessionToken?: string) =>
+    publicApi.get(`/items/dataset/${datasetId}/seq/${seqNum}`, {
+      params: sessionToken ? { session_token: sessionToken } : {},
+    }),
+  update: (id: number, data: { current_content: any }, sessionToken?: string) =>
+    publicApi.put(`/items/${id}`, data, {
+      params: sessionToken ? { session_token: sessionToken } : {},
+    }),
+  approve: (id: number, sessionToken?: string) =>
+    publicApi.post(`/items/${id}/approve`, null, {
+      params: sessionToken ? { session_token: sessionToken } : {},
+    }),
+  reject: (id: number, sessionToken?: string) =>
+    publicApi.post(`/items/${id}/reject`, null, {
+      params: sessionToken ? { session_token: sessionToken } : {},
     }),
 }

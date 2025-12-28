@@ -1,44 +1,37 @@
 import {
-    ArrowLeftOutlined,
-    CheckOutlined,
-    CloseOutlined,
-    DownloadOutlined,
-    EditOutlined,
-    FastForwardOutlined,
-    LeftOutlined,
-    RightOutlined,
-    SaveOutlined,
-    SendOutlined,
-    ShareAltOutlined,
+  ArrowLeftOutlined,
+  DownloadOutlined,
+  FastForwardOutlined,
+  LeftOutlined,
+  RightOutlined,
+  SendOutlined,
+  ShareAltOutlined,
 } from '@ant-design/icons'
 import {
-    Button,
-    Card,
-    Col,
-    Dropdown,
-    Input,
-    InputNumber,
-    Row,
-    Space,
-    Spin,
-    Statistic,
-    Tag,
-    Tooltip,
-    Typography,
-    message,
+  Button,
+  Card,
+  Col,
+  Dropdown,
+  InputNumber,
+  Row,
+  Space,
+  Spin,
+  Statistic,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
 } from 'antd'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import DelegateModal from '../components/DelegateModal'
-import DiffCard from '../components/DiffCard'
 import ExportModal from '../components/ExportModal'
+import QACardUnified from '../components/QACardUnified'
 import ShareModal from '../components/ShareModal'
 import { datasetsApi, itemsApi } from '../services/api'
-import { useReviewStore } from '../stores/reviewStore'
 
 const { Title, Text } = Typography
-const { TextArea } = Input
 
 const statusColors: Record<string, string> = {
   pending: 'default',
@@ -59,35 +52,36 @@ interface ReviewPageProps {
   sharePermission?: string
 }
 
+/**
+ * 数据集详情页审核组件（重构版）
+ * - 使用QACardUnified统一形式
+ * - 左右分栏展示编辑
+ * - inline diff显示变更
+ */
 export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPageProps) {
   const { datasetId } = useParams<{ datasetId: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dataset, setDataset] = useState<any>(null)
+  const [currentItem, setCurrentItem] = useState<any>(null)
+  const [currentIndex, setCurrentIndex] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, modified: 0 })
   const [jumpToSeq, setJumpToSeq] = useState<number | null>(null)
+  
+  // 编辑状态
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [editingContent, setEditingContent] = useState<any>(null)
   
   // 弹窗状态
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [exportModalOpen, setExportModalOpen] = useState(false)
   const [delegateModalOpen, setDelegateModalOpen] = useState(false)
 
-  const {
-    currentItem,
-    currentIndex,
-    totalItems,
-    isEditing,
-    editingContent,
-    setCurrentItem,
-    setItems,
-    setCurrentIndex,
-    setEditing,
-    setEditingContent,
-  } = useReviewStore()
-
-  // 是否可编辑模式
+  // 是否可编辑
   const canEdit = !shareToken || sharePermission === 'edit'
 
   // 获取数据集信息
@@ -97,64 +91,60 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     }
   }, [datasetId])
 
-  // 获取语料列表
-  const fetchItems = async (page = 1) => {
+  // 获取语料
+  const fetchItem = useCallback(async (index: number) => {
     if (!datasetId) return
     setLoading(true)
     try {
-      const res = await itemsApi.list(parseInt(datasetId), page, 1)
-      const { items, total, pending_count, approved_count, rejected_count, modified_count } =
-        res.data
-      setItems(items, total)
+      const res = await itemsApi.list(parseInt(datasetId), index, 1)
+      const { items, total, pending_count, approved_count, rejected_count, modified_count } = res.data
+      setTotalItems(total)
       setStats({
-        pending: pending_count,
-        approved: approved_count,
-        rejected: rejected_count,
-        modified: modified_count,
+        pending: pending_count || 0,
+        approved: approved_count || 0,
+        rejected: rejected_count || 0,
+        modified: modified_count || 0,
       })
       if (items.length > 0) {
         setCurrentItem(items[0])
-        setCurrentIndex(page)
+        setCurrentIndex(index)
+        setEditingContent(JSON.parse(JSON.stringify(items[0].current_content)))
+        setEditingField(null)
       }
     } catch (error) {
       message.error('获取语料失败')
     } finally {
       setLoading(false)
     }
-  }
+  }, [datasetId])
 
   useEffect(() => {
     const seq = searchParams.get('seq')
-    if (seq) {
-      fetchItems(parseInt(seq))
-    } else {
-      fetchItems(1)
-    }
-  }, [datasetId])
+    fetchItem(seq ? parseInt(seq) : 1)
+  }, [datasetId, searchParams, fetchItem])
 
-  // 导航函数
+  // 导航
   const goPrev = () => {
-    if (currentIndex > 1) fetchItems(currentIndex - 1)
+    if (currentIndex > 1 && !editingField) fetchItem(currentIndex - 1)
   }
 
   const goNext = () => {
-    if (currentIndex < totalItems) fetchItems(currentIndex + 1)
+    if (currentIndex < totalItems && !editingField) fetchItem(currentIndex + 1)
   }
 
   const goToSeq = (seq: number) => {
-    if (seq >= 1 && seq <= totalItems) {
-      fetchItems(seq)
+    if (seq >= 1 && seq <= totalItems && !editingField) {
+      fetchItem(seq)
       setJumpToSeq(null)
     }
   }
 
   const goToNextPending = async () => {
-    if (!datasetId) return
+    if (!datasetId || editingField) return
     try {
       const res = await itemsApi.list(parseInt(datasetId), 1, 1, 'pending')
       if (res.data.items.length > 0) {
-        const item = res.data.items[0]
-        fetchItems(item.seq_num)
+        fetchItem(res.data.items[0].seq_num)
       } else {
         message.info('没有待审核的语料了')
       }
@@ -163,9 +153,41 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     }
   }
 
-  // 操作函数
-  const handleApprove = async () => {
+  // 开始编辑
+  const startEdit = (field: string) => {
+    if (!canEdit) {
+      message.warning('当前模式不可编辑')
+      return
+    }
+    setEditingField(field)
+    setEditingContent(JSON.parse(JSON.stringify(currentItem.current_content)))
+  }
+
+  // 保存
+  const handleSave = async () => {
     if (!currentItem || !canEdit) return
+    setSaving(true)
+    try {
+      await itemsApi.update(currentItem.id, { current_content: editingContent })
+      message.success('保存成功')
+      setEditingField(null)
+      fetchItem(currentIndex)
+    } catch (error) {
+      message.error('保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 取消编辑
+  const handleCancel = () => {
+    setEditingField(null)
+    setEditingContent(currentItem?.current_content)
+  }
+
+  // 通过
+  const handleApprove = async () => {
+    if (!currentItem || !canEdit || editingField) return
     setSaving(true)
     try {
       await itemsApi.approve(currentItem.id)
@@ -178,8 +200,9 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     }
   }
 
+  // 拒绝
   const handleReject = async () => {
-    if (!currentItem || !canEdit) return
+    if (!currentItem || !canEdit || editingField) return
     setSaving(true)
     try {
       await itemsApi.reject(currentItem.id)
@@ -192,139 +215,17 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     }
   }
 
-  const handleSave = async () => {
-    if (!currentItem || !editingContent || !canEdit) return
-    setSaving(true)
-    try {
-      await itemsApi.update(currentItem.id, { current_content: editingContent })
-      message.success('保存成功')
-      setEditing(false)
-      fetchItems(currentIndex)
-    } catch (error) {
-      message.error('保存失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   // 快捷键
-  useHotkeys('pageup', goPrev, { enabled: !isEditing })
-  useHotkeys('pagedown', goNext, { enabled: !isEditing })
-  useHotkeys('ctrl+enter', handleApprove, { enabled: !isEditing && canEdit, preventDefault: true })
-  useHotkeys('ctrl+shift+enter', handleReject, {
-    enabled: !isEditing && canEdit,
-    preventDefault: true,
-  })
-  useHotkeys('ctrl+e', () => canEdit && setEditing(true), {
-    enabled: !isEditing && canEdit,
-    preventDefault: true,
-  })
-  useHotkeys('ctrl+s', handleSave, { enabled: isEditing && canEdit, preventDefault: true })
-  useHotkeys('escape', () => setEditing(false), { enabled: isEditing })
-  useHotkeys('ctrl+g', () => document.getElementById('jump-input')?.focus(), {
-    preventDefault: true,
-  })
-  useHotkeys('ctrl+shift+n', goToNextPending, { enabled: !isEditing, preventDefault: true })
-
-  // 渲染编辑器
-  const renderEditor = () => {
-    if (!currentItem) return null
-
-    if (currentItem.item_type === 'qa' && currentItem.current_content.messages) {
-      return (
-        <div className="qa-container">
-          <div className="qa-column qa-question">
-            <Text strong>问题 (Q) <span className="shortcut-hint">Ctrl+Q 聚焦</span></Text>
-            <TextArea
-              id="editor-q"
-              value={editingContent?.messages?.[0]?.content || ''}
-              onChange={(e) => {
-                const newContent = JSON.parse(JSON.stringify(editingContent))
-                if (newContent.messages && newContent.messages[0]) {
-                  newContent.messages[0].content = e.target.value
-                  setEditingContent(newContent)
-                }
-              }}
-              rows={10}
-              style={{ marginTop: 8 }}
-              autoSize={{ minRows: 6, maxRows: 20 }}
-            />
-          </div>
-          <div className="qa-column qa-answer">
-            <Text strong>回答 (A) <span className="shortcut-hint">Ctrl+A 聚焦</span></Text>
-            <TextArea
-              id="editor-a"
-              value={editingContent?.messages?.[1]?.content || ''}
-              onChange={(e) => {
-                const newContent = JSON.parse(JSON.stringify(editingContent))
-                if (newContent.messages && newContent.messages[1]) {
-                  newContent.messages[1].content = e.target.value
-                  setEditingContent(newContent)
-                }
-              }}
-              rows={10}
-              style={{ marginTop: 8 }}
-              autoSize={{ minRows: 6, maxRows: 20 }}
-            />
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <TextArea
-        value={editingContent?.text || JSON.stringify(editingContent, null, 2)}
-        onChange={(e) => {
-          if (currentItem.current_content.text !== undefined) {
-            setEditingContent({ text: e.target.value })
-          } else {
-            try {
-              setEditingContent(JSON.parse(e.target.value))
-            } catch {
-              // keep as is
-            }
-          }
-        }}
-        rows={15}
-        autoSize={{ minRows: 10, maxRows: 30 }}
-      />
-    )
-  }
-
-  // 快捷键聚焦编辑器
-  useHotkeys(
-    'ctrl+q',
-    () => {
-      if (isEditing) document.getElementById('editor-q')?.focus()
-    },
-    { enabled: isEditing, preventDefault: true }
-  )
-  useHotkeys(
-    'ctrl+a',
-    () => {
-      if (isEditing) document.getElementById('editor-a')?.focus()
-    },
-    { enabled: isEditing, preventDefault: true }
-  )
-
-  // 渲染内容
-  const renderContent = () => {
-    if (!currentItem) return null
-
-    if (isEditing) {
-      return renderEditor()
-    }
-
-    // 使用差异卡片组件
-    return (
-      <DiffCard
-        itemType={currentItem.item_type}
-        originalContent={currentItem.original_content}
-        currentContent={currentItem.current_content}
-        hasChanges={currentItem.has_changes}
-      />
-    )
-  }
+  useHotkeys('pageup', goPrev, { enabled: !editingField })
+  useHotkeys('pagedown', goNext, { enabled: !editingField })
+  useHotkeys('ctrl+enter', handleApprove, { enabled: !editingField && canEdit, preventDefault: true })
+  useHotkeys('ctrl+shift+enter', handleReject, { enabled: !editingField && canEdit, preventDefault: true })
+  useHotkeys('q', () => startEdit('q_0'), { enabled: !editingField && canEdit, preventDefault: true })
+  useHotkeys('a', () => startEdit('a_0'), { enabled: !editingField && canEdit, preventDefault: true })
+  useHotkeys('ctrl+s', handleSave, { enabled: !!editingField && canEdit, preventDefault: true })
+  useHotkeys('escape', handleCancel, { enabled: !!editingField })
+  useHotkeys('ctrl+g', () => document.getElementById('jump-input')?.focus(), { preventDefault: true })
+  useHotkeys('ctrl+shift+n', goToNextPending, { enabled: !editingField, preventDefault: true })
 
   const actionMenuItems = [
     {
@@ -408,10 +309,13 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                 onPressEnter={() => jumpToSeq && goToSeq(jumpToSeq)}
                 placeholder={`1-${totalItems}`}
                 style={{ width: 100 }}
+                disabled={!!editingField}
               />
-              <Button onClick={() => jumpToSeq && goToSeq(jumpToSeq)}>跳转</Button>
+              <Button onClick={() => jumpToSeq && goToSeq(jumpToSeq)} disabled={!!editingField}>
+                跳转
+              </Button>
               <Tooltip title="跳转到下一个待审核 (Ctrl+Shift+N)">
-                <Button icon={<FastForwardOutlined />} onClick={goToNextPending}>
+                <Button icon={<FastForwardOutlined />} onClick={goToNextPending} disabled={!!editingField}>
                   下一待审
                 </Button>
               </Tooltip>
@@ -435,11 +339,12 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           <span>PgUp/PgDn 翻页</span>
           <span>Ctrl+Enter 通过</span>
           <span>Ctrl+Shift+Enter 拒绝</span>
-          <span>Ctrl+E 编辑</span>
+          <span>q 编辑问题</span>
+          <span>a 编辑回答</span>
           <span>Ctrl+S 保存</span>
+          <span>Esc 取消</span>
           <span>Ctrl+G 跳转</span>
           <span>Ctrl+Shift+N 下一待审</span>
-          {isEditing && <span>Ctrl+Q/A 切换编辑区</span>}
         </Space>
       </div>
 
@@ -466,7 +371,20 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           }
           styles={{ body: { padding: 24, minHeight: 300 } }}
         >
-          {renderContent()}
+          {currentItem && (
+            <QACardUnified
+              originalContent={currentItem.original_content}
+              currentContent={editingField ? editingContent : currentItem.current_content}
+              seqNum={currentItem.seq_num}
+              fieldMapping={dataset?.field_mapping}
+              editingField={editingField}
+              onStartEdit={startEdit}
+              onContentChange={setEditingContent}
+              onSave={handleSave}
+              onCancel={handleCancel}
+              readOnly={!canEdit}
+            />
+          )}
         </Card>
       </Spin>
 
@@ -483,59 +401,49 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         }}
       >
         <Space size="large">
-          <Button size="large" icon={<LeftOutlined />} onClick={goPrev} disabled={currentIndex <= 1}>
+          <Button size="large" icon={<LeftOutlined />} onClick={goPrev} disabled={currentIndex <= 1 || !!editingField}>
             上一条
           </Button>
-          {isEditing ? (
+          
+          {editingField ? (
             <>
-              <Button
-                size="large"
-                icon={<SaveOutlined />}
-                type="primary"
-                onClick={handleSave}
-                loading={saving}
-              >
-                保存 (Ctrl+S)
-              </Button>
-              <Button size="large" onClick={() => setEditing(false)}>
+              <Button size="large" onClick={handleCancel}>
                 取消 (Esc)
+              </Button>
+              <Button size="large" type="primary" onClick={handleSave} loading={saving}>
+                保存 (Ctrl+S)
               </Button>
             </>
           ) : (
-            <>
-              {canEdit && (
-                <>
-                  <Button size="large" icon={<EditOutlined />} onClick={() => setEditing(true)}>
-                    编辑
-                  </Button>
-                  <Button
-                    size="large"
-                    icon={<CheckOutlined />}
-                    type="primary"
-                    style={{ background: '#52c41a', borderColor: '#52c41a' }}
-                    onClick={handleApprove}
-                    loading={saving}
-                  >
-                    通过
-                  </Button>
-                  <Button
-                    size="large"
-                    icon={<CloseOutlined />}
-                    danger
-                    onClick={handleReject}
-                    loading={saving}
-                  >
-                    拒绝
-                  </Button>
-                </>
-              )}
-            </>
+            canEdit && (
+              <>
+                <Button
+                  size="large"
+                  type="primary"
+                  danger
+                  onClick={handleReject}
+                  loading={saving}
+                >
+                  拒绝 (Ctrl+Shift+Enter)
+                </Button>
+                <Button
+                  size="large"
+                  type="primary"
+                  style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                  onClick={handleApprove}
+                  loading={saving}
+                >
+                  通过 (Ctrl+Enter)
+                </Button>
+              </>
+            )
           )}
+          
           <Button
             size="large"
             icon={<RightOutlined />}
             onClick={goNext}
-            disabled={currentIndex >= totalItems}
+            disabled={currentIndex >= totalItems || !!editingField}
           >
             下一条
           </Button>

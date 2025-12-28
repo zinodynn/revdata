@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react'
+import { CheckCircleOutlined, KeyOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, Col, Empty, Progress, Row, Space, Statistic, Table, Tag, Typography } from 'antd'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Table, Card, Tag, Button, Progress, Typography, Space } from 'antd'
-import { PlayCircleOutlined } from '@ant-design/icons'
+import AuthCodeModal from '../components/AuthCodeModal'
 import { tasksApi } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 
 interface Task {
   id: number
   dataset_id: number
+  dataset_name?: string
   item_start: number
   item_end: number
   status: string
@@ -42,13 +45,16 @@ const priorityLabels: Record<number, { text: string; color: string }> = {
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
+  const [authCodeModalOpen, setAuthCodeModalOpen] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const navigate = useNavigate()
+  useAuthStore() // 保持store订阅
 
   const fetchTasks = async () => {
     setLoading(true)
     try {
       const res = await tasksApi.myTasks()
-      setTasks(res.data.items)
+      setTasks(res.data.items || res.data)
     } catch (error) {
       console.error(error)
     } finally {
@@ -60,21 +66,39 @@ export default function TasksPage() {
     fetchTasks()
   }, [])
 
+  // 进入纯净审核页面
+  const startReview = (task: Task) => {
+    navigate(`/review/${task.dataset_id}?seq=${task.item_start}`)
+  }
+
+  // 打开授权码管理
+  const openAuthCode = (task: Task) => {
+    setSelectedTask(task)
+    setAuthCodeModalOpen(true)
+  }
+
+  // 统计数据
+  const stats = {
+    total: tasks.length,
+    pending: tasks.filter((t) => t.status === 'pending' || t.status === 'in_progress').length,
+    completed: tasks.filter((t) => t.status === 'completed').length,
+    totalItems: tasks.reduce((sum, t) => sum + t.total_items, 0),
+    reviewedItems: tasks.reduce((sum, t) => sum + t.reviewed_items, 0),
+  }
+
   const columns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      width: 80,
-    },
-    {
       title: '数据集',
-      dataIndex: 'dataset_id',
-      width: 100,
-    },
-    {
-      title: '范围',
-      render: (_: any, record: Task) => `#${record.item_start} - #${record.item_end}`,
-      width: 150,
+      key: 'dataset',
+      render: (_: any, record: Task) => (
+        <div>
+          <Text strong>{record.dataset_name || `数据集 #${record.dataset_id}`}</Text>
+          <br />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            #{record.item_start} - #{record.item_end}
+          </Text>
+        </div>
+      ),
     },
     {
       title: '进度',
@@ -82,10 +106,11 @@ export default function TasksPage() {
         <Progress
           percent={Math.round((record.reviewed_items / record.total_items) * 100)}
           size="small"
+          strokeColor={record.reviewed_items === record.total_items ? '#52c41a' : '#1890ff'}
           format={() => `${record.reviewed_items}/${record.total_items}`}
         />
       ),
-      width: 200,
+      width: 180,
     },
     {
       title: '优先级',
@@ -104,23 +129,30 @@ export default function TasksPage() {
       ),
     },
     {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      width: 180,
-      render: (date: string) => new Date(date).toLocaleString(),
+      title: '备注',
+      dataIndex: 'note',
+      ellipsis: true,
+      width: 150,
     },
     {
       title: '操作',
-      width: 150,
+      width: 200,
       render: (_: any, record: Task) => (
         <Space>
           <Button
-            type="link"
+            type="primary"
             icon={<PlayCircleOutlined />}
-            onClick={() => navigate(`/datasets/${record.dataset_id}/review`)}
+            onClick={() => startReview(record)}
             disabled={record.status === 'completed'}
           >
-            审核
+            开始审核
+          </Button>
+          <Button
+            icon={<KeyOutlined />}
+            onClick={() => openAuthCode(record)}
+            title="生成授权码委派他人审核"
+          >
+            授权码
           </Button>
         </Space>
       ),
@@ -129,19 +161,83 @@ export default function TasksPage() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>
-        我的任务
-      </Title>
+      {/* 统计卡片 */}
+      <Row gutter={16} style={{ marginBottom: 24 }}>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic title="总任务" value={stats.total} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic title="待处理" value={stats.pending} valueStyle={{ color: '#1890ff' }} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic title="已完成" value={stats.completed} valueStyle={{ color: '#52c41a' }} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic
+              title="审核进度"
+              value={stats.totalItems > 0 ? Math.round((stats.reviewedItems / stats.totalItems) * 100) : 0}
+              suffix="%"
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+      </Row>
 
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={tasks}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 20 }}
-        />
+      <Card
+        title={
+          <Space>
+            <Title level={5} style={{ margin: 0 }}>我的清单</Title>
+          </Space>
+        }
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={fetchTasks}>
+            刷新
+          </Button>
+        }
+      >
+        {tasks.length === 0 && !loading ? (
+          <Empty
+            image={<CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a' }} />}
+            description={
+              <div>
+                <Text style={{ fontSize: 16 }}>暂无待处理的任务</Text>
+                <br />
+                <Text type="secondary">等待管理员分配新的审核任务</Text>
+              </div>
+            }
+          />
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={tasks}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10 }}
+            onRow={(record) => ({
+              style: { cursor: 'pointer' },
+              onDoubleClick: () => startReview(record),
+            })}
+          />
+        )}
       </Card>
+
+      {/* 授权码管理弹窗 */}
+      {selectedTask && (
+        <AuthCodeModal
+          open={authCodeModalOpen}
+          onClose={() => setAuthCodeModalOpen(false)}
+          datasetId={selectedTask.dataset_id}
+          itemStart={selectedTask.item_start}
+          itemEnd={selectedTask.item_end}
+        />
+      )}
     </div>
   )
 }

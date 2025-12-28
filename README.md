@@ -1,5 +1,122 @@
 # 数据集审核平台 (Review Dataset Platform)
 
+## 架构预览
+
+```mermaid 
+---
+config:
+    look: handDrawn
+    theme: default 
+---
+
+flowchart TB
+    %% 定义泳道
+    subgraph SUPERADMIN["超级管理员"]
+        direction TB
+        SA1[创建管理员账户]
+        SA2[管理所有用户权限/角色]
+        SA3[监控系统健康状态]
+        SA4[查看全局统计报告]
+    end
+
+    subgraph ADMIN["Admin (管理员)"]
+        direction TB
+        A1[上传原始数据] --> A2[管理用户权限/密码重置]
+        A2 --> A3[配置审核规则]
+        A3 --> A4[管理文档库]
+        A4 --> A5[导出审核结果]
+        A5 --> A6[生成报告]
+    end
+
+
+    subgraph REVIEWER["Reviewer (审核员)"]
+        direction TB
+        R1[接收审核任务] --> R2{审核语料}
+        R2 -->|确定| R3[直接通过/拒绝/编辑变更]
+        R2 -->|不确定| R4[生成授权码]
+        R4 --> R5[委托给Assignee]
+        R3 --> R6[更新审核状态]
+        R6 --> R7[查看任务统计]
+    end
+
+    subgraph ASSIGNEE["Assignee 被委托人\n(无独立账号或委派成员)"]
+        direction TB
+        AS1[接收授权码或带授权码链接] --> AS2[访问审核界面]
+        AS2 --> AS3[审核委托语料]
+        AS3 --> AS4[提交审核结果]
+        AS4 -->|自动关联| R6
+    end
+
+    subgraph SYSTEM["系统核心"]
+        direction TB
+        S1[(原始数据池)] 
+        S2[(审核任务数据包或队列)]
+        S3[(授权码管理)]
+        S4[(审核数据库)]
+        S5[(导出文件库)]
+        
+        S1 -.->|指派分配| S2
+        S2 -->|任务分发| R1
+        S3 -->|验证| AS2
+        S4 -->|汇总| S5
+        S2 -->|按标签自动分配| R1
+        S2 -->|手动指定Reviewer| R1
+    end
+
+    %% 配置审核规则选项
+    subgraph CONFIGURATION["配置审核规则"]
+        direction TB
+        CR1[设置审核标准（如准确性、完整性等）]
+        CR2[定义标签体系（用于自动化分配）]
+        CR3[配置审核流程（单次/多次审核）]
+        CR4[设定时间限制]
+        CR5[自定义通知和提醒]
+    end
+
+    %% 跨泳道交互
+    SA1 -->|创建| ADMIN
+    SA2 -->|管理| REVIEWER
+    SA2 -->|管理| ASSIGNEE
+    SA4 -->|查看| SYSTEM
+    
+    A1 -->|写入| S1
+    A3 -->|设置规则| CR1
+    A3 -->|设置规则| CR2
+    A3 -->|设置规则| CR3
+    A3 -->|设置规则| CR4
+    A3 -->|设置规则| CR5
+    A5 -->|提取| S4
+    R4 -->|创建| S3
+    AS4 -->|写入| S4
+    R5 -->|分享| AS1
+    S2 -->|任务通知| R1
+
+    A4--->|提取|S5
+    %% 样式定义
+    classDef superadmin fill:#f0f7ff,stroke:#08c,stroke-width:2px;
+    classDef admin fill:#e6f7ff,stroke:#1890ff,stroke-width:2px;
+    classDef reviewer fill:#e6fffb,stroke:#13c2c2,stroke-width:2px;
+    classDef assignee fill:#fff7e6,stroke:#fa8c16,stroke-width:2px;
+    classDef system fill:#f9f0ff,stroke:#722ed1,stroke-width:2px;
+    classDef data fill:#fff2e8,stroke:#ff7a45,stroke-width:1px,stroke-dasharray:5 5;
+    
+    class SUPERADMIN superadmin;
+    class ADMIN admin;
+    class REVIEWER reviewer;
+    class ASSIGNEE assignee;
+    class SYSTEM system;
+    class CONFIGURATION data;
+    class S1,S2,S3,S4,S5 data;
+    
+    %% 重要连接线样式
+    linkStyle 10 stroke:#fa541c,stroke-width:2px;
+    linkStyle 11 stroke:#fa541c,stroke-width:2px,stroke-dasharray:3;
+    linkStyle 12 stroke:#13c2c2,stroke-width:2px;
+
+```
+
+
+
 ## 快速开始
 
 ### 开发环境

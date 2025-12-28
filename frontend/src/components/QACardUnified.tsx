@@ -1,0 +1,535 @@
+import { BulbOutlined, EditOutlined, PictureOutlined } from '@ant-design/icons'
+import { Button, Collapse, Image, Input, Tag, Typography } from 'antd'
+import { useEffect, useMemo, useRef } from 'react'
+
+const { Text } = Typography
+const { TextArea } = Input
+
+export interface FieldMappingConfig {
+  question_field: string | null
+  answer_field: string | null
+  thinking_field: string | null
+  context_field: string | null
+  messages_field: string | null
+  metadata_fields: string[]
+  display_mode: 'conversation' | 'qa_pair' | 'plain' | 'auto'
+}
+
+interface Message {
+  role: string
+  content: string
+  images?: string[]  // 多模态图片
+}
+
+interface QACardUnifiedProps {
+  originalContent: any
+  currentContent: any
+  seqNum: number
+  theme?: 'light' | 'dark'
+  fieldMapping?: FieldMappingConfig
+  editingField?: string | null  // 当前编辑的字段: 'q_0', 'a_0', 'q_1', 'a_1' ...
+  onStartEdit?: (field: string) => void
+  onContentChange?: (newContent: any) => void
+  onSave?: () => void
+  onCancel?: () => void
+  readOnly?: boolean
+}
+
+/**
+ * 统一展示编辑的QA卡片组件
+ * - 展示和编辑一体化
+ * - 左右分栏(Q/A)
+ * - 支持多轮对话
+ * - 原位显示diff(红绿变更)
+ * - 支持多模态图片
+ */
+export default function QACardUnified({
+  originalContent,
+  currentContent,
+  seqNum,
+  theme = 'light',
+  fieldMapping,
+  editingField,
+  onStartEdit,
+  onContentChange,
+  onSave,
+  onCancel,
+  readOnly = false,
+}: QACardUnifiedProps) {
+  const isDark = theme === 'dark'
+  const editRef = useRef<HTMLTextAreaElement>(null)
+
+  // 解析消息列表
+  const parseMessages = (content: any): Message[] => {
+    if (!content) return []
+    
+    // 优先使用field_mapping
+    if (fieldMapping?.messages_field && content[fieldMapping.messages_field]) {
+      const msgs = content[fieldMapping.messages_field]
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        return msgs.map((m: any) => ({
+          role: m.role || 'user',
+          content: String(m.content || ''),
+          images: m.images,
+        }))
+      }
+    }
+    
+    // 默认messages格式
+    if (content.messages && Array.isArray(content.messages)) {
+      return content.messages.map((m: any) => ({
+        role: m.role || 'user',
+        content: String(m.content || ''),
+        images: m.images,
+      }))
+    }
+    
+    // conversations格式 (ShareGPT等)
+    if (content.conversations && Array.isArray(content.conversations)) {
+      return content.conversations.map((m: any) => ({
+        role: m.from === 'human' ? 'user' : m.from === 'gpt' ? 'assistant' : (m.role || 'user'),
+        content: String(m.value || m.content || ''),
+        images: m.images,
+      }))
+    }
+    
+    // QA对格式转换为messages
+    const q = fieldMapping?.question_field 
+      ? content[fieldMapping.question_field]
+      : content.question || content.instruction || content.prompt || content.input || content.query || content.user
+    const a = fieldMapping?.answer_field
+      ? content[fieldMapping.answer_field]
+      : content.answer || content.output || content.completion || content.response || content.assistant
+    
+    if (q !== undefined || a !== undefined) {
+      return [
+        { role: 'user', content: String(q ?? '') },
+        { role: 'assistant', content: String(a ?? '') },
+      ]
+    }
+    
+    // 纯文本
+    const text = content.text || content.content || (typeof content === 'string' ? content : '')
+    if (text) {
+      return [{ role: 'plain', content: String(text) }]
+    }
+    
+    // 最后尝试：如果content是对象，尝试显示第一个字符串字段
+    if (typeof content === 'object') {
+      for (const key of Object.keys(content)) {
+        if (typeof content[key] === 'string' && content[key].length > 0) {
+          return [{ role: 'plain', content: `${key}: ${content[key]}` }]
+        }
+      }
+      // 如果还是没有，显示JSON
+      return [{ role: 'plain', content: JSON.stringify(content, null, 2) }]
+    }
+    
+    return []
+  }
+
+  const originalMessages = useMemo(() => parseMessages(originalContent), [originalContent, fieldMapping])
+  const currentMessages = useMemo(() => parseMessages(currentContent), [currentContent, fieldMapping])
+
+  // 判断是否是纯文本模式
+  const isPlainText = currentMessages.length === 1 && currentMessages[0].role === 'plain'
+
+  // 聚焦编辑框
+  useEffect(() => {
+    if (editingField && editRef.current) {
+      editRef.current.focus()
+      editRef.current.setSelectionRange(
+        editRef.current.value.length,
+        editRef.current.value.length
+      )
+    }
+  }, [editingField])
+
+  // 更新消息内容
+  const updateMessageContent = (index: number, _role: 'user' | 'assistant' | 'plain', newValue: string) => {
+    if (!onContentChange || !currentContent) return
+    
+    // 深拷贝当前内容
+    const newContent = JSON.parse(JSON.stringify(currentContent))
+    
+    // 根据原始数据格式更新
+    if (fieldMapping?.messages_field && newContent[fieldMapping.messages_field]) {
+      newContent[fieldMapping.messages_field][index].content = newValue
+      onContentChange(newContent)
+    } else if (newContent.messages && Array.isArray(newContent.messages)) {
+      newContent.messages[index].content = newValue
+      onContentChange(newContent)
+    } else if (newContent.conversations && Array.isArray(newContent.conversations)) {
+      // ShareGPT格式
+      newContent.conversations[index].value = newValue
+      onContentChange(newContent)
+    } else {
+      // QA对格式 - 根据index判断是Q还是A
+      const isQuestion = index === 0
+      if (isQuestion) {
+        const qField = fieldMapping?.question_field || 
+          (newContent.question !== undefined ? 'question' : 
+           newContent.instruction !== undefined ? 'instruction' :
+           newContent.prompt !== undefined ? 'prompt' :
+           newContent.input !== undefined ? 'input' :
+           newContent.query !== undefined ? 'query' :
+           newContent.user !== undefined ? 'user' : 'question')
+        newContent[qField] = newValue
+      } else {
+        const aField = fieldMapping?.answer_field ||
+          (newContent.answer !== undefined ? 'answer' :
+           newContent.output !== undefined ? 'output' :
+           newContent.completion !== undefined ? 'completion' :
+           newContent.response !== undefined ? 'response' :
+           newContent.assistant !== undefined ? 'assistant' : 'answer')
+        newContent[aField] = newValue
+      }
+      onContentChange(newContent)
+    }
+  }
+
+  // 计算行内diff
+  const getInlineDiff = (original: string, current: string): React.ReactNode => {
+    if (original === current) {
+      return <span>{current}</span>
+    }
+    
+    // 简单的字符级diff
+    const result: React.ReactNode[] = []
+    let i = 0
+    
+    // 找到公共前缀
+    while (i < original.length && i < current.length && original[i] === current[i]) {
+      i++
+    }
+    if (i > 0) {
+      result.push(<span key="prefix">{current.substring(0, i)}</span>)
+    }
+    
+    // 找到公共后缀
+    let oi = original.length - 1
+    let ci = current.length - 1
+    while (oi > i && ci > i && original[oi] === current[ci]) {
+      oi--
+      ci--
+    }
+    
+    // 删除的部分
+    if (oi >= i) {
+      result.push(
+        <span 
+          key="removed" 
+          style={{ 
+            background: isDark ? '#442726' : '#ffeef0', 
+            color: isDark ? '#f85149' : '#cb2431',
+            textDecoration: 'line-through',
+          }}
+        >
+          {original.substring(i, oi + 1)}
+        </span>
+      )
+    }
+    
+    // 添加的部分
+    if (ci >= i) {
+      result.push(
+        <span 
+          key="added" 
+          style={{ 
+            background: isDark ? '#1f3d2a' : '#e6ffed', 
+            color: isDark ? '#7ee787' : '#22863a',
+          }}
+        >
+          {current.substring(i, ci + 1)}
+        </span>
+      )
+    }
+    
+    // 公共后缀
+    if (ci < current.length - 1) {
+      result.push(<span key="suffix">{current.substring(ci + 1)}</span>)
+    }
+    
+    return <>{result}</>
+  }
+
+  // 渲染单条消息
+  const renderMessage = (
+    msg: Message, 
+    originalMsg: Message | undefined, 
+    index: number,
+    isUser: boolean
+  ) => {
+    const fieldKey = `${isUser ? 'q' : 'a'}_${Math.floor(index / 2)}`
+    const isEditing = editingField === fieldKey
+    const hasChanges = originalMsg && msg.content !== originalMsg.content
+    
+    const bgColor = isUser
+      ? (isDark ? '#1e2838' : '#f0f5ff')
+      : (isDark ? '#1e3828' : '#f6ffed')
+    const borderColor = isUser
+      ? (isDark ? '#3a4a5c' : '#adc6ff')
+      : (isDark ? '#3a5c4a' : '#b7eb8f')
+    const editBorderColor = isUser ? '#1890ff' : '#52c41a'
+    
+    return (
+      <div
+        key={index}
+        style={{
+          flex: 1,
+          padding: 16,
+          borderRadius: 12,
+          background: bgColor,
+          border: isEditing ? `2px solid ${editBorderColor}` : `1px solid ${borderColor}`,
+          minHeight: 150,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* 标题栏 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <Text strong style={{ color: isDark ? '#e8e8e8' : '#333', fontSize: 15 }}>
+              {isUser ? '用户' : '助手'}
+            </Text>
+            {hasChanges && !isEditing && (
+              <Tag color={isUser ? 'blue' : 'green'} style={{ marginLeft: 8 }}>已修改</Tag>
+            )}
+            {isEditing && (
+              <Tag color="orange" style={{ marginLeft: 8 }}>编辑中</Tag>
+            )}
+          </div>
+          {!readOnly && !isEditing && onStartEdit && (
+            <Button 
+              size="small" 
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => onStartEdit(fieldKey)}
+            >
+              编辑 ({isUser ? 'q' : 'a'})
+            </Button>
+          )}
+          {isEditing && (
+            <div>
+              <Button size="small" type="primary" onClick={onSave} style={{ marginRight: 8 }}>
+                保存 (Ctrl+S)
+              </Button>
+              <Button size="small" onClick={onCancel}>
+                取消 (Esc)
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* 多模态图片 */}
+        {msg.images && msg.images.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              <PictureOutlined /> 附带图片:
+            </Text>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              {msg.images.map((img, imgIdx) => (
+                <Image
+                  key={imgIdx}
+                  src={img}
+                  width={120}
+                  height={120}
+                  style={{ objectFit: 'cover', borderRadius: 8 }}
+                  fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6UAAABRWlDQ1BJQ0MgUHJvZmlsZQAAKJFjYGASSSwoyGFhYGDIzSspCnJ3UoiIjFJgf8LAwSDCIMogwMCcmFxc4BgQ4ANUwgCjUcG3awyMIPqyLsis7PPOq3QdDFcvjV3jOD1boQVTPQrgSkktTgbSf4A4LbmgqISBgTEFyFYuLykAsTuAbJEioKOA7DkgdjqEvQHEToKwj4DVhAQ5A9k3gGyB5IxEoBmML4BsnSQk8XQkNtReEOBxcfXxUQg1Mjc0dyHgXNJBSWpFCYh2zi+oLMpMzyhRcASGUqqCZ16yno6CkYGRAQMDKMwhqj/fAIcloxgHQqxAjIHBEugw5sUIsSQpBobtQPdLciLEVJYzMPBHMDBsayhILEqEO4DxG0txmrERhM29nYGBddr//5/DGRjYNRkY/l7////39v///y4Dmn+LgesAVQYGAJnkWI0AAAAASUVORK5CYII="
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 内容区域 */}
+        <div style={{ flex: 1 }}>
+          {isEditing ? (
+            <TextArea
+              ref={editRef as any}
+              value={msg.content}
+              onChange={(e) => updateMessageContent(index, msg.role as any, e.target.value)}
+              autoSize={{ minRows: 4, maxRows: 20 }}
+              style={{
+                background: isDark ? '#2a3a4a' : '#fff',
+                color: isDark ? '#e8e8e8' : '#333',
+                border: 'none',
+                resize: 'none',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.8,
+                color: isDark ? '#e8e8e8' : '#333',
+                fontSize: 14,
+                wordBreak: 'break-word',
+              }}
+            >
+              {hasChanges && originalMsg
+                ? getInlineDiff(originalMsg.content, msg.content)
+                : msg.content
+              }
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 获取上下文和思考内容
+  const getContext = () => {
+    if (fieldMapping?.context_field && currentContent?.[fieldMapping.context_field]) {
+      return currentContent[fieldMapping.context_field]
+    }
+    return currentContent?.system || currentContent?.system_prompt || currentContent?.context
+  }
+
+  const getThinking = () => {
+    if (fieldMapping?.thinking_field && currentContent?.[fieldMapping.thinking_field]) {
+      return currentContent[fieldMapping.thinking_field]
+    }
+    return currentContent?.thinking || currentContent?.reasoning || currentContent?.thought
+  }
+
+  const context = getContext()
+  const thinking = getThinking()
+
+  // 纯文本模式 - 单栏
+  if (isPlainText) {
+    const msg = currentMessages[0]
+    const originalMsg = originalMessages[0]
+    const hasChanges = originalMsg && msg.content !== originalMsg.content
+    const isEditing = editingField === 'q_0'
+
+    return (
+      <div
+        style={{
+          padding: 20,
+          borderRadius: 12,
+          background: isDark ? '#2a2a2a' : '#f5f7fa',
+          border: isEditing ? '2px solid #1890ff' : (isDark ? '1px solid #434343' : '1px solid #e8e8e8'),
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <Text strong style={{ color: isDark ? '#e8e8e8' : '#333' }}>
+              第 {seqNum} 条
+            </Text>
+            {hasChanges && !isEditing && <Tag color="blue" style={{ marginLeft: 8 }}>已修改</Tag>}
+            {isEditing && <Tag color="orange" style={{ marginLeft: 8 }}>编辑中</Tag>}
+          </div>
+          {!readOnly && !isEditing && onStartEdit && (
+            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => onStartEdit('q_0')}>
+              编辑 (q)
+            </Button>
+          )}
+          {isEditing && (
+            <div>
+              <Button size="small" type="primary" onClick={onSave} style={{ marginRight: 8 }}>保存</Button>
+              <Button size="small" onClick={onCancel}>取消</Button>
+            </div>
+          )}
+        </div>
+
+        {isEditing ? (
+          <TextArea
+            ref={editRef as any}
+            value={msg.content}
+            onChange={(e) => updateMessageContent(0, 'plain', e.target.value)}
+            autoSize={{ minRows: 6, maxRows: 30 }}
+            style={{
+              background: isDark ? '#3a3a3a' : '#fff',
+              color: isDark ? '#e8e8e8' : '#333',
+            }}
+          />
+        ) : (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: isDark ? '#e8e8e8' : '#333' }}>
+            {hasChanges && originalMsg
+              ? getInlineDiff(originalMsg.content, msg.content)
+              : msg.content
+            }
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="qa-card-unified">
+      {/* 上下文 */}
+      {context && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 8,
+            background: isDark ? '#2a2a3a' : '#f9f0ff',
+            border: isDark ? '1px solid #4a4a5a' : '1px solid #d3adf7',
+          }}
+        >
+          <Text type="secondary" style={{ fontSize: 12 }}>系统上下文:</Text>
+          <div style={{ marginTop: 4, color: isDark ? '#d0d0d0' : '#531dab', fontSize: 13 }}>
+            {context}
+          </div>
+        </div>
+      )}
+
+      {/* 思考过程 */}
+      {thinking && (
+        <Collapse
+          ghost
+          style={{ marginBottom: 16 }}
+          items={[{
+            key: 'thinking',
+            label: (
+              <span style={{ color: isDark ? '#faad14' : '#d48806' }}>
+                <BulbOutlined /> 思考过程
+              </span>
+            ),
+            children: (
+              <div
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  lineHeight: 1.6,
+                  color: isDark ? '#d0d0d0' : '#666',
+                  fontSize: 13,
+                  background: isDark ? '#2a2820' : '#fffbe6',
+                  padding: 12,
+                  borderRadius: 8,
+                }}
+              >
+                {thinking}
+              </div>
+            ),
+          }]}
+        />
+      )}
+
+      {/* 多轮对话 */}
+      {currentMessages.map((msg, idx) => {
+        if (msg.role === 'plain') return null
+        
+        const isUser = msg.role === 'user' || msg.role === 'human'
+        const originalMsg = originalMessages[idx]
+        
+        // 每两条消息(user+assistant)为一轮，左右分栏
+        if (isUser) {
+          const nextMsg = currentMessages[idx + 1]
+          const nextOriginal = originalMessages[idx + 1]
+          
+          return (
+            <div key={idx} style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+              {renderMessage(msg, originalMsg, idx, true)}
+              {nextMsg && renderMessage(nextMsg, nextOriginal, idx + 1, false)}
+            </div>
+          )
+        }
+        
+        // assistant消息已在上面处理
+        return null
+      })}
+    </div>
+  )
+}
