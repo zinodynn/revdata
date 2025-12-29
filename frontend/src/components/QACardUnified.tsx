@@ -61,8 +61,40 @@ export default function QACardUnified({
 
   // 解析消息列表
   const parseMessages = (content: any): Message[] => {
+    // debug: log incoming content keys
+    try {
+      console.debug('[QACardUnified] parseMessages content keys', content && typeof content === 'object' ? Object.keys(content) : typeof content)
+      ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+      ;(window as any).__revdata_debug_logs.push({ tag: 'QACardUnified', t: Date.now(), type: 'parse_start', keys: content && typeof content === 'object' ? Object.keys(content) : null })
+    } catch (e) {
+      // ignore
+    }
+
     if (!content) return []
-    
+
+    // 规范化内容键（处理可能的 BOM 前缀或不可见字符）
+    if (typeof content === 'object' && !Array.isArray(content)) {
+      const normalized: any = {}
+      for (const k of Object.keys(content)) {
+        const nk = k.replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
+        normalized[nk] = content[k]
+      }
+      content = normalized
+    }
+
+    // 规范化 fieldMapping 中的字段名（防止 fieldMapping 指向带不可见字符的键）
+    let normalizedFieldMapping = fieldMapping
+    if (fieldMapping) {
+      const nf: any = { ...fieldMapping }
+      if (nf.question_field) nf.question_field = String(nf.question_field).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
+      if (nf.answer_field) nf.answer_field = String(nf.answer_field).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
+      if (nf.messages_field) nf.messages_field = String(nf.messages_field).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
+      if (nf.context_field) nf.context_field = String(nf.context_field).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
+      if (nf.thinking_field) nf.thinking_field = String(nf.thinking_field).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
+      if (nf.metadata_fields && Array.isArray(nf.metadata_fields)) nf.metadata_fields = nf.metadata_fields.map((m: string) => String(m).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, ''))
+      normalizedFieldMapping = nf
+    }
+
     // 优先使用field_mapping
     if (fieldMapping?.messages_field && content[fieldMapping.messages_field]) {
       const msgs = content[fieldMapping.messages_field]
@@ -93,13 +125,22 @@ export default function QACardUnified({
       }))
     }
     
-    // QA对格式转换为messages
-    const q = fieldMapping?.question_field 
-      ? content[fieldMapping.question_field]
+// QA对格式转换为messages（使用规范化后的 fieldMapping）
+    const q = normalizedFieldMapping?.question_field
+      ? content[normalizedFieldMapping.question_field]
       : content.question || content.instruction || content.prompt || content.input || content.query || content.user
-    const a = fieldMapping?.answer_field
-      ? content[fieldMapping.answer_field]
+    const a = normalizedFieldMapping?.answer_field
+      ? content[normalizedFieldMapping.answer_field]
       : content.answer || content.output || content.completion || content.response || content.assistant
+
+    // debug：记录 q/a 的解析结果
+    try {
+      console.debug('[QACardUnified] resolved q/a', { q, a, keys: Object.keys(content) })
+      ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+      ;(window as any).__revdata_debug_logs.push({ tag: 'QACardUnified', t: Date.now(), type: 'resolved_qa', q: q ?? null, a: a ?? null, keys: Object.keys(content) })
+    } catch (e) {
+      // ignore
+    }
     
     if (q !== undefined || a !== undefined) {
       return [
@@ -131,17 +172,37 @@ export default function QACardUnified({
   const originalMessages = useMemo(() => parseMessages(originalContent), [originalContent, fieldMapping])
   const currentMessages = useMemo(() => parseMessages(currentContent), [currentContent, fieldMapping])
 
+  // debug parsed messages
+  useEffect(() => {
+    try {
+      console.debug('[QACardUnified] parsed messages', { originalMessages, currentMessages })
+      ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+      ;(window as any).__revdata_debug_logs.push({ tag: 'QACardUnified', t: Date.now(), type: 'parsed_messages', original: originalMessages, current: currentMessages })
+    } catch (e) {
+      // ignore
+    }
+  }, [originalMessages, currentMessages])
+
   // 判断是否是纯文本模式
   const isPlainText = currentMessages.length === 1 && currentMessages[0].role === 'plain'
 
   // 聚焦编辑框
   useEffect(() => {
     if (editingField && editRef.current) {
-      editRef.current.focus()
-      editRef.current.setSelectionRange(
-        editRef.current.value.length,
-        editRef.current.value.length
-      )
+      try {
+        console.debug('[QACardUnified] focus edit', editingField)
+        ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+        ;(window as any).__revdata_debug_logs.push({ tag: 'QACardUnified', t: Date.now(), type: 'focus', editingField, valueLen: editRef.current?.value?.length })
+        editRef.current.focus()
+        editRef.current.setSelectionRange(
+          editRef.current.value.length,
+          editRef.current.value.length
+        )
+      } catch (e) {
+        console.error('[QACardUnified] focus/edit setSelectionRange error', e, { editingField, valueLen: editRef.current?.value?.length })
+        ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+        ;(window as any).__revdata_debug_logs.push({ tag: 'QACardUnified', t: Date.now(), type: 'focus_error', err: String(e) })
+      }
     }
   }, [editingField])
 

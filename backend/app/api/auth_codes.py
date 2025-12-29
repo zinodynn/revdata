@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
@@ -11,7 +11,7 @@ from app.schemas.auth_code import (
     AuthCodeResponse,
     AuthCodeVerifyResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,6 +123,23 @@ async def verify_auth_code(
     db.add(session)
     await db.commit()
 
+    # log created session info
+    try:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "auth_code verify created session",
+            extra={
+                "code": code,
+                "auth_code_id": auth_code.id,
+                "session_token": session_token,
+                "expires_at": session.expires_at,
+            },
+        )
+    except Exception:
+        pass
+
     return AuthCodeVerifyResponse(
         valid=True,
         dataset_id=auth_code.dataset_id,
@@ -159,10 +176,27 @@ async def revoke_auth_code(
 
 @router.post("/session/leave")
 async def leave_session(
-    session_token: str,
+    session_token: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
+    request: Request = None,
 ):
-    """离开会话，释放在线计数"""
+    """离开会话，释放在线计数
+
+    Accepts session_token either as query parameter or JSON body {"session_token": "..."}.
+    If missing, returns a harmless message instead of 422 to avoid failed unload flows.
+    """
+    # 尝试从 JSON body 中获取 session_token（兼容 sendBeacon）
+    if not session_token and request is not None:
+        try:
+            payload = await request.json()
+            if isinstance(payload, dict):
+                session_token = payload.get("session_token")
+        except Exception:
+            pass
+
+    if not session_token:
+        return {"message": "no session_token provided"}
+
     result = await db.execute(
         select(AuthCodeSession).where(AuthCodeSession.session_token == session_token)
     )

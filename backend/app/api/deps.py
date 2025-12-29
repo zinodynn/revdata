@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from app.core.database import get_db
@@ -7,6 +8,8 @@ from app.models.user import User, UserRole
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 async def get_current_user(
@@ -84,8 +87,23 @@ async def verify_session_token(
         select(AuthCodeSession).where(AuthCodeSession.session_token == session_token)
     )
     session = result.scalar_one_or_none()
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "verify_session_token lookup",
+            extra={
+                "session_token": session_token,
+                "found": bool(session),
+                "is_left": getattr(session, "is_left", None),
+                "expires_at": getattr(session, "expires_at", None),
+            },
+        )
 
     if not session or session.is_left:
+        if session and session.is_left:
+            logger.debug(
+                "verify_session_token: session already left",
+                extra={"session_token": session_token},
+            )
         return None
 
     return session

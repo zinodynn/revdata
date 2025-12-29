@@ -106,9 +106,15 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         modified: modified_count || 0,
       })
       if (items.length > 0) {
-        setCurrentItem(items[0])
+        // 防御性规范化，移除可能的 BOM 键，确保前端显示正常
+        const { normalizeJsonKeys } = await import('../utils/json')
+        const normalized = normalizeJsonKeys(items[0])
+        console.debug('[ReviewPageV2] fetchItem normalized', normalized)
+        ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+        ;(window as any).__revdata_debug_logs.push({ tag: 'ReviewPageV2', t: Date.now(), type: 'fetchItem_normalized', seq: index, normalizedKeys: Object.keys(normalized || {}), currentKeys: Object.keys(normalized?.current_content || {}) })
+        setCurrentItem(normalized)
         setCurrentIndex(index)
-        setEditingContent(JSON.parse(JSON.stringify(items[0].current_content)))
+        setEditingContent(JSON.parse(JSON.stringify(normalized.current_content)))
         setEditingField(null)
       }
     } catch (error) {
@@ -159,8 +165,19 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       message.warning('当前模式不可编辑')
       return
     }
+    console.debug('[ReviewPageV2] startEdit', field, { seq: currentItem?.seq_num, id: currentItem?.id, keys: Object.keys(currentItem?.current_content || {}) })
+    // push to global debug logs (temporary)
+    ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+    ;(window as any).__revdata_debug_logs.push({ tag: 'ReviewPageV2', t: Date.now(), type: 'startEdit', field, seq: currentItem?.seq_num, id: currentItem?.id })
+
     setEditingField(field)
-    setEditingContent(JSON.parse(JSON.stringify(currentItem.current_content)))
+    try {
+      setEditingContent(JSON.parse(JSON.stringify(currentItem.current_content)))
+    } catch (e) {
+      console.error('[ReviewPageV2] startEdit deep copy failed', e, currentItem)
+      ;(window as any).__revdata_debug_logs.push({ tag: 'ReviewPageV2', t: Date.now(), type: 'startEdit_error', err: String(e) })
+      setEditingContent(currentItem?.current_content)
+    }
   }
 
   // 保存
@@ -387,6 +404,22 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           )}
         </Card>
       </Spin>
+
+      {/* 临时调试面板（编辑时显示） */}
+      {editingField && (
+        <div style={{ position: 'fixed', right: 12, bottom: 12, width: 360, maxHeight: 220, overflow: 'auto', background: '#fff', border: '1px solid #e8e8e8', padding: 10, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', zIndex: 9999 }}>
+          <div style={{ fontSize: 12, marginBottom: 6 }}><strong>调试日志 (最近)</strong></div>
+          <div style={{ fontSize: 12, color: '#444' }}>
+            {((window as any).__revdata_debug_logs || []).slice(-30).reverse().map((l: any, i: number) => (
+              <div key={i} style={{ marginBottom: 6, borderBottom: '1px dashed #f0f0f0', paddingBottom: 4 }}>
+                <div style={{ color: '#999', fontSize: 11 }}>{new Date(l.t).toLocaleTimeString()}</div>
+                <div><strong>{l.tag}</strong> · {l.type} {l.field ? <span>· {l.field}</span> : null}</div>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#222' }}> {JSON.stringify(l, null, 2)} </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 操作按钮 */}
       <div

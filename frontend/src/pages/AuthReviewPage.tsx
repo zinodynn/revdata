@@ -133,16 +133,52 @@ export default function AuthReviewPage() {
     try {
       const seqNum = session.item_start + index - 1
       const res = await publicItemsApi.getBySeq(session.dataset_id, seqNum, session.session_token)
-      setCurrentItem(res.data)
+      // 规范化服务器返回，防御性去掉键名前的不可见字符
+      const { normalizeJsonKeys } = await import('../utils/json')
+      const normalized = normalizeJsonKeys(res.data)
+      setCurrentItem(normalized)
       setCurrentIndex(index)
-      setEditingContent(JSON.parse(JSON.stringify(res.data.current_content)))
+      setEditingContent(JSON.parse(JSON.stringify(normalized.current_content)))
       setEditingField(null)
-    } catch (err) {
-      message.error('获取语料失败')
+    } catch (err: any) {
+      console.error('[AuthReviewPage] fetchItem error', err)
+      ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+      ;(window as any).__revdata_debug_logs.push({ tag: 'AuthReviewPage', t: Date.now(), type: 'fetchItem_error', err: err?.response?.data || err?.message || String(err) })
+
+      const status = err?.response?.status
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || '获取语料失败'
+
+      // 如果是认证/权限相关错误，尝试重新验证一次授权码后重试（一次性）
+      if ((status === 401 || status === 403) && code) {
+        try {
+          const verifyRes = await authCodeApi.verify(code)
+          if (verifyRes.data.valid) {
+            setSession(verifyRes.data)
+            sessionRef.current = verifyRes.data
+            sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(verifyRes.data))
+            // 重试一次
+            const seqNum = verifyRes.data.item_start + index - 1
+            const retryRes = await publicItemsApi.getBySeq(verifyRes.data.dataset_id, seqNum, verifyRes.data.session_token)
+            setCurrentItem(retryRes.data)
+            setCurrentIndex(index)
+            setEditingContent(JSON.parse(JSON.stringify(retryRes.data.current_content)))
+            setEditingField(null)
+            setLoading(false)
+            return
+          } else {
+            message.error(verifyRes.data.message || '授权验证失败')
+          }
+        } catch (e) {
+          console.error('[AuthReviewPage] re-verify failed', e)
+          ;(window as any).__revdata_debug_logs.push({ tag: 'AuthReviewPage', t: Date.now(), type: 'reverify_error', err: e?.response?.data || e?.message || String(e) })
+        }
+      }
+
+      message.error(detail)
     } finally {
       setLoading(false)
     }
-  }, [session])
+  }, [session, code])
 
   useEffect(() => {
     if (session) {
@@ -188,7 +224,37 @@ export default function AuthReviewPage() {
       message.success('保存成功')
       setEditingField(null)
       fetchItem(currentIndex)
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[AuthReviewPage] handleSave error', err)
+      // 如果是认证失败，尝试重新验证一次授权码并重试一次保存
+      const status = err?.response?.status
+      if ((status === 401 || status === 403) && code) {
+        try {
+          const verifyRes = await authCodeApi.verify(code)
+          if (verifyRes.data.valid) {
+            setSession(verifyRes.data)
+            sessionRef.current = verifyRes.data
+            sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(verifyRes.data))
+            // 重试保存一次
+            await publicItemsApi.update(currentItem.id, { current_content: editingContent }, verifyRes.data.session_token)
+            if (code) {
+              await authCodeApi.recordReview(code, {
+                item_id: currentItem.id,
+                action: 'edit',
+                session_token: verifyRes.data.session_token,
+              }).catch(() => {})
+            }
+            message.success('保存成功（已重试）')
+            setEditingField(null)
+            fetchItem(currentIndex)
+            return
+          } else {
+            message.error(verifyRes.data.message || '授权验证失败')
+          }
+        } catch (e) {
+          console.error('[AuthReviewPage] re-verify on save failed', e)
+        }
+      }
       message.error('保存失败')
     } finally {
       setSaving(false)

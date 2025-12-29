@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -13,9 +14,12 @@ from app.models.data_item import DataItem, ItemStatus
 from app.models.revision import Revision
 from app.models.user import User
 from app.schemas.data_item import DataItemListResponse, DataItemResponse, DataItemUpdate
+from app.utils import normalize_json_keys
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -63,9 +67,11 @@ async def list_items(
     )
     items = result.scalars().all()
 
-    # 标记是否有修改
+    # 标记是否有修改，并规范化响应中的 JSON 键（移除 BOM 等不可见字符）
     item_responses = []
     for item in items:
+        item.original_content = normalize_json_keys(item.original_content)
+        item.current_content = normalize_json_keys(item.current_content)
         response = DataItemResponse.model_validate(item)
         response.has_changes = item.original_content != item.current_content
         item_responses.append(response)
@@ -95,6 +101,9 @@ async def get_item(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="语料不存在")
 
+    # 规范化返回的 JSON 字段，避免键名中带有 BOM 等不可见字符
+    item.original_content = normalize_json_keys(item.original_content)
+    item.current_content = normalize_json_keys(item.current_content)
     response = DataItemResponse.model_validate(item)
     response.has_changes = item.original_content != item.current_content
     return response
@@ -133,6 +142,9 @@ async def get_item_by_seq(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="语料不存在")
 
+    # 规范化返回的 JSON 字段，避免键名中带有 BOM 等不可见字符
+    item.original_content = normalize_json_keys(item.original_content)
+    item.current_content = normalize_json_keys(item.current_content)
     response = DataItemResponse.model_validate(item)
     response.has_changes = item.original_content != item.current_content
     return response
@@ -148,8 +160,36 @@ async def update_item(
     auth_code: Optional[AuthCode] = Depends(get_auth_code_from_session),
 ):
     """更新语料内容 - 支持用户认证或session_token认证"""
+    # 记录请求上下文，帮助排查授权问题
+    logger.debug(
+        "update_item called",
+        extra={
+            "item_id": item_id,
+            "session_token": session_token,
+            "current_user_id": getattr(current_user, "id", None),
+            "auth_code_id": getattr(auth_code, "id", None),
+        },
+    )
+
     # 验证权限
     if not current_user and not auth_code:
+        # 额外检查 session_token 是否存在但已被标记为离开，从而给出更明确的错误提示
+        if session_token:
+            res = await db.execute(
+                select(AuthCodeSession).where(
+                    AuthCodeSession.session_token == session_token
+                )
+            )
+            s = res.scalar_one_or_none()
+            if s and s.is_left:
+                logger.info(
+                    "update_item: session token already left",
+                    extra={"session_token": session_token, "session_id": s.id},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="授权会话已结束（session 已离开）",
+                )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="需要登录或有效的授权码"
         )
@@ -183,7 +223,10 @@ async def update_item(
         db.add(revision)
 
     # 更新语料
-    item.current_content = update_data.current_content
+    # 规范化内容以避免键名中携带不可见字符（例如 BOM）导致前端解析问题
+    from app.utils import normalize_json_keys
+
+    item.current_content = normalize_json_keys(update_data.current_content)
     if update_data.status:
         item.status = update_data.status
     else:
@@ -196,6 +239,10 @@ async def update_item(
 
     await db.commit()
     await db.refresh(item)
+
+    # 规范化返回的 JSON 字段
+    item.original_content = normalize_json_keys(item.original_content)
+    item.current_content = normalize_json_keys(item.current_content)
 
     response = DataItemResponse.model_validate(item)
     response.has_changes = item.original_content != item.current_content
@@ -243,6 +290,10 @@ async def approve_item(
     await db.commit()
     await db.refresh(item)
 
+    # 规范化返回的 JSON 字段
+    item.original_content = normalize_json_keys(item.original_content)
+    item.current_content = normalize_json_keys(item.current_content)
+
     response = DataItemResponse.model_validate(item)
     response.has_changes = item.original_content != item.current_content
     return response
@@ -288,6 +339,10 @@ async def reject_item(
 
     await db.commit()
     await db.refresh(item)
+
+    # 规范化返回的 JSON 字段
+    item.original_content = normalize_json_keys(item.original_content)
+    item.current_content = normalize_json_keys(item.current_content)
 
     response = DataItemResponse.model_validate(item)
     response.has_changes = item.original_content != item.current_content

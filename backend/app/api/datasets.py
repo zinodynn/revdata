@@ -19,6 +19,7 @@ from app.schemas.dataset import (
     FieldDetectionResponse,
     FieldMapping,
 )
+from app.utils import normalize_json_keys
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -244,11 +245,13 @@ async def upload_dataset(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"文件解析失败: {str(e)}"
         )
 
+    items = [normalize_json_keys(it) for it in items]
+
     # 检测字段并生成建议映射
     detected_fields, suggested_mapping = detect_fields_from_content(items)
     dataset.field_mapping = suggested_mapping.model_dump()
 
-    # 创建数据项 - 保存原始内容，不再标准化
+    # 创建数据项 - 保存原始内容（已规范化）
     for seq_num, item_content in enumerate(items, start=1):
         item_type = detect_item_type(item_content)
 
