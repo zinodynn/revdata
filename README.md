@@ -3,12 +3,6 @@
 ## 架构预览
 
 ```mermaid 
----
-config:
-    look: handDrawn
-    theme: default 
----
-
 flowchart TB
     %% 定义泳道
     subgraph SUPERADMIN["超级管理员"]
