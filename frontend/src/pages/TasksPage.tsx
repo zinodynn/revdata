@@ -68,7 +68,10 @@ export default function TasksPage() {
 
   // 进入纯净审核页面
   const startReview = (task: Task) => {
-    navigate(`/review/${task.dataset_id}?seq=${task.item_start}`)
+    // 如果是离散的任务(item_ids)，目前ReviewPageV2主要支持seq导航，
+    // 但我们可以传入seq=item_start作为入口，或者后续改进ReviewPageV2支持任务ID
+    // 暂时先跳转到起始序号
+    navigate(`/datasets/${task.dataset_id}/review?seq=${task.item_start}`)
   }
 
   // 打开授权码管理

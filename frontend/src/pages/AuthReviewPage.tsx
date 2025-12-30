@@ -31,6 +31,7 @@ interface AuthSession {
   dataset_id: number
   item_start: number
   item_end: number
+  item_ids?: number[]
   permission: string
   session_token: string
 }
@@ -55,6 +56,7 @@ export default function AuthReviewPage() {
   const [editingContent, setEditingContent] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [isCompleted, setIsCompleted] = useState(false)
 
   const sessionRef = useRef<AuthSession | null>(null)
   const { theme: appTheme, toggleTheme, hotkeys } = useSettingsStore()
@@ -73,7 +75,11 @@ export default function AuthReviewPage() {
         const res = await authCodeApi.verify(code)
         if (res.data.valid) {
           setSession(res.data)
-          sessionRef.current = res.data
+          if (res.data.item_ids && res.data.item_ids.length > 0) {
+            setTotalItems(res.data.item_ids.length)
+          } else {
+            setTotalItems(res.data.item_end - res.data.item_start + 1)
+          }
           setTotalItems(res.data.item_end - res.data.item_start + 1)
           // 存储session到sessionStorage
           sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(res.data))
@@ -94,7 +100,11 @@ export default function AuthReviewPage() {
         const cachedSession = JSON.parse(cached)
         setSession(cachedSession)
         sessionRef.current = cachedSession
-        setTotalItems(cachedSession.item_end - cachedSession.item_start + 1)
+        if (cachedSession.item_ids && cachedSession.item_ids.length > 0) {
+          setTotalItems(cachedSession.item_ids.length)
+        } else {
+          setTotalItems(cachedSession.item_end - cachedSession.item_start + 1)
+        }
         setLoading(false)
       } catch {
         verify()
@@ -131,8 +141,15 @@ export default function AuthReviewPage() {
     
     setLoading(true)
     try {
-      const seqNum = session.item_start + index - 1
-      const res = await publicItemsApi.getBySeq(session.dataset_id, seqNum, session.session_token)
+      let res
+      if (session.item_ids && session.item_ids.length > 0) {
+        const itemId = session.item_ids[index - 1]
+        res = await publicItemsApi.get(itemId, session.session_token)
+      } else {
+        const seqNum = session.item_start + index - 1
+        res = await publicItemsApi.getBySeq(session.dataset_id, seqNum, session.session_token)
+      }
+      
       // 规范化服务器返回，防御性去掉键名前的不可见字符
       const { normalizeJsonKeys } = await import('../utils/json')
       const normalized = normalizeJsonKeys(res.data)
@@ -157,8 +174,15 @@ export default function AuthReviewPage() {
             sessionRef.current = verifyRes.data
             sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(verifyRes.data))
             // 重试一次
-            const seqNum = verifyRes.data.item_start + index - 1
-            const retryRes = await publicItemsApi.getBySeq(verifyRes.data.dataset_id, seqNum, verifyRes.data.session_token)
+            let retryRes
+            if (verifyRes.data.item_ids && verifyRes.data.item_ids.length > 0) {
+              const itemId = verifyRes.data.item_ids[index - 1]
+              retryRes = await publicItemsApi.get(itemId, verifyRes.data.session_token)
+            } else {
+              const seqNum = verifyRes.data.item_start + index - 1
+              retryRes = await publicItemsApi.getBySeq(verifyRes.data.dataset_id, seqNum, verifyRes.data.session_token)
+            }
+            
             setCurrentItem(retryRes.data)
             setCurrentIndex(index)
             setEditingContent(JSON.parse(JSON.stringify(retryRes.data.current_content)))
@@ -192,7 +216,11 @@ export default function AuthReviewPage() {
   }
 
   const goNext = () => {
-    if (currentIndex < totalItems) fetchItem(currentIndex + 1)
+    if (currentIndex < totalItems) {
+      fetchItem(currentIndex + 1)
+    } else {
+      setIsCompleted(true)
+    }
   }
 
   // 开始编辑
@@ -282,7 +310,34 @@ export default function AuthReviewPage() {
       }
       message.success('已通过')
       goNext()
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[AuthReviewPage] handleApprove error', err)
+      const status = err?.response?.status
+      if ((status === 401 || status === 403) && code) {
+        try {
+          const verifyRes = await authCodeApi.verify(code)
+          if (verifyRes.data.valid) {
+            setSession(verifyRes.data)
+            sessionRef.current = verifyRes.data
+            sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(verifyRes.data))
+            
+            // Retry
+            await publicItemsApi.approve(currentItem.id, verifyRes.data.session_token)
+            if (code) {
+              await authCodeApi.recordReview(code, {
+                item_id: currentItem.id,
+                action: 'approve',
+                session_token: verifyRes.data.session_token,
+              }).catch(() => {})
+            }
+            message.success('已通过')
+            goNext()
+            return
+          }
+        } catch (e) {
+          console.error('[AuthReviewPage] re-verify failed', e)
+        }
+      }
       message.error('操作失败')
     } finally {
       setSaving(false)
@@ -303,7 +358,34 @@ export default function AuthReviewPage() {
       }
       message.success('已拒绝')
       goNext()
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[AuthReviewPage] handleReject error', err)
+      const status = err?.response?.status
+      if ((status === 401 || status === 403) && code) {
+        try {
+          const verifyRes = await authCodeApi.verify(code)
+          if (verifyRes.data.valid) {
+            setSession(verifyRes.data)
+            sessionRef.current = verifyRes.data
+            sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(verifyRes.data))
+            
+            // Retry
+            await publicItemsApi.reject(currentItem.id, verifyRes.data.session_token)
+            if (code) {
+              await authCodeApi.recordReview(code, {
+                item_id: currentItem.id,
+                action: 'reject',
+                session_token: verifyRes.data.session_token,
+              }).catch(() => {})
+            }
+            message.success('已拒绝')
+            goNext()
+            return
+          }
+        } catch (e) {
+          console.error('[AuthReviewPage] re-verify failed', e)
+        }
+      }
       message.error('操作失败')
     } finally {
       setSaving(false)
@@ -353,6 +435,35 @@ export default function AuthReviewPage() {
               <Button key="retry" onClick={() => navigate('/auth')}>
                 重新输入授权码
               </Button>
+            ]}
+          />
+        </div>
+      </ConfigProvider>
+    )
+  }
+
+  // 完成状态
+  if (isCompleted) {
+    return (
+      <ConfigProvider theme={themeConfig}>
+        <div style={{ 
+          minHeight: '100vh', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          background: isDark ? '#141414' : '#f5f5f5',
+        }}>
+          <Result
+            status="success"
+            title="审核任务已完成"
+            subTitle="感谢您的辛勤工作！您已完成所有分配的语料审核。"
+            extra={[
+              <Button type="primary" key="exit" onClick={handleExit}>
+                退出任务
+              </Button>,
+              <Button key="review" onClick={() => { setIsCompleted(false); fetchItem(1); }}>
+                重新检查
+              </Button>,
             ]}
           />
         </div>

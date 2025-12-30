@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -8,6 +8,7 @@ class AuthCodeCreate(BaseModel):
     dataset_id: int
     item_start: int
     item_end: int
+    item_ids: Optional[List[int]] = None
     permission: str = "edit"
     max_online: int = 1
     max_verify_count: int = 10
@@ -20,6 +21,7 @@ class AuthCodeResponse(BaseModel):
     dataset_id: int
     item_start: int
     item_end: int
+    item_ids: Optional[List[int]] = None
     permission: str
     max_online: int
     current_online: int
@@ -45,6 +47,7 @@ class AuthCodeVerifyResponse(BaseModel):
     dataset_id: Optional[int] = None
     item_start: Optional[int] = None
     item_end: Optional[int] = None
+    item_ids: Optional[List[int]] = None
     permission: Optional[str] = None
     session_token: Optional[str] = None
 

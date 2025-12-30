@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
+
 from app.models.task import TaskStatus
+from pydantic import BaseModel
 
 
 class TaskCreate(BaseModel):
@@ -9,6 +10,7 @@ class TaskCreate(BaseModel):
     assignee_id: int
     item_start: int
     item_end: int
+    item_ids: Optional[List[int]] = None
     priority: Optional[int] = 0
     note: Optional[str] = None
     due_date: Optional[datetime] = None
@@ -21,13 +23,14 @@ class TaskResponse(BaseModel):
     assignee_id: int
     item_start: int
     item_end: int
+    item_ids: Optional[List[int]] = None
     status: TaskStatus
     priority: int
     note: Optional[str]
     due_date: Optional[datetime]
     created_at: datetime
     completed_at: Optional[datetime]
-    
+
     # 进度信息
     total_items: int = 0
     reviewed_items: int = 0

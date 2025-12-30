@@ -1,22 +1,24 @@
-import { ExportOutlined, EyeOutlined, MoreOutlined, PlusOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons'
+import { ExportOutlined, EyeOutlined, KeyOutlined, MoreOutlined, PlusOutlined, SendOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons'
 import {
-    Button,
-    Card,
-    Dropdown,
-    Form,
-    Input,
-    message,
-    Modal,
-    Space,
-    Spin,
-    Steps,
-    Table,
-    Tag,
-    Typography,
-    Upload,
+  Button,
+  Card,
+  Dropdown,
+  Form,
+  Input,
+  message,
+  Modal,
+  Space,
+  Spin,
+  Steps,
+  Table,
+  Tag,
+  Typography,
+  Upload,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import AuthCodeModal from '../components/AuthCodeModal'
+import DelegateModal from '../components/DelegateModal'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import { datasetsApi } from '../services/api'
 
@@ -61,6 +63,9 @@ export default function DatasetsPage() {
   const [fieldMapping, setFieldMapping] = useState<FieldMapping | null>(null)
   const [reviewConfig, setReviewConfig] = useState<ReviewConfig | null>(null)
   const [detecting, setDetecting] = useState(false)
+  const [authCodeModalOpen, setAuthCodeModalOpen] = useState(false)
+  const [delegateModalOpen, setDelegateModalOpen] = useState(false)
+  const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null)
   const [form] = Form.useForm()
   const navigate = useNavigate()
 
@@ -176,7 +181,7 @@ export default function DatasetsPage() {
     },
     {
       title: '操作',
-      width: 180,
+      width: 220,
       render: (_: any, record: Dataset) => (
         <Space>
           <Button
@@ -185,11 +190,31 @@ export default function DatasetsPage() {
             icon={<EyeOutlined />}
             onClick={() => navigate(`/datasets/${record.id}/review`)}
           >
-            审核
+            预览
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={<SendOutlined />}
+            onClick={() => {
+              setSelectedDatasetId(record.id)
+              setDelegateModalOpen(true)
+            }}
+          >
+            委派
           </Button>
           <Dropdown
             menu={{
               items: [
+                {
+                  key: 'auth_code',
+                  icon: <KeyOutlined />,
+                  label: '生成授权码',
+                  onClick: () => {
+                    setSelectedDatasetId(record.id)
+                    setAuthCodeModalOpen(true)
+                  },
+                },
                 {
                   key: 'detail',
                   icon: <SettingOutlined />,
@@ -232,6 +257,20 @@ export default function DatasetsPage() {
           pagination={{ pageSize: 20 }}
         />
       </Card>
+
+      <AuthCodeModal
+        open={authCodeModalOpen}
+        onClose={() => setAuthCodeModalOpen(false)}
+        datasetId={selectedDatasetId || 0}
+      />
+
+      <DelegateModal
+        open={delegateModalOpen}
+        onClose={() => setDelegateModalOpen(false)}
+        datasetId={selectedDatasetId || 0}
+        currentItemSeq={1}
+        totalItems={datasets.find(d => d.id === selectedDatasetId)?.item_count || 0}
+      />
 
       <Modal
         title="上传数据集"

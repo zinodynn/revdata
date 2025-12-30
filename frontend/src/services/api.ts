@@ -93,14 +93,14 @@ export const datasetsApi = {
 
 // Items API
 export const itemsApi = {
-  list: (datasetId: number, page = 1, pageSize = 20, statusFilter?: string) =>
+  list: (datasetId: number, page = 1, pageSize = 20, statusFilter?: string, isMarked?: boolean) =>
     api.get(`/items/dataset/${datasetId}`, {
-      params: { page, page_size: pageSize, status_filter: statusFilter },
+      params: { page, page_size: pageSize, status_filter: statusFilter, is_marked: isMarked },
     }),
   get: (id: number) => api.get(`/items/${id}`),
   getBySeq: (datasetId: number, seqNum: number) =>
     api.get(`/items/dataset/${datasetId}/seq/${seqNum}`),
-  update: (id: number, data: { current_content: any; status?: string; comment?: string }) =>
+  update: (id: number, data: { current_content: any; status?: string; comment?: string; is_marked?: boolean }) =>
     api.put(`/items/${id}`, data),
   approve: (id: number) => api.post(`/items/${id}/approve`),
   reject: (id: number) => api.post(`/items/${id}/reject`),
@@ -175,6 +175,10 @@ export const authCodeApi = {
 
 // 公开Items API - 用于授权码访问
 export const publicItemsApi = {
+  get: (id: number, sessionToken?: string) =>
+    publicApi.get(`/items/${id}`, {
+      params: sessionToken ? { session_token: sessionToken } : {},
+    }),
   getBySeq: (datasetId: number, seqNum: number, sessionToken?: string) =>
     publicApi.get(`/items/dataset/${datasetId}/seq/${seqNum}`, {
       params: sessionToken ? { session_token: sessionToken } : {},

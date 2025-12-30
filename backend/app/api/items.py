@@ -30,6 +30,7 @@ async def list_items(
     page: int = 1,
     page_size: int = 20,
     status_filter: Optional[ItemStatus] = None,
+    is_marked: Optional[bool] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -40,6 +41,8 @@ async def list_items(
     conditions = [DataItem.dataset_id == dataset_id]
     if status_filter:
         conditions.append(DataItem.status == status_filter)
+    if is_marked is not None:
+        conditions.append(DataItem.is_marked == is_marked)
 
     # 查询总数
     count_result = await db.execute(
@@ -56,6 +59,14 @@ async def list_items(
             )
         )
         stats[s.value] = stat_result.scalar()
+
+    # 查询标记数量
+    marked_result = await db.execute(
+        select(func.count(DataItem.id)).where(
+            and_(DataItem.dataset_id == dataset_id, DataItem.is_marked == True)
+        )
+    )
+    marked_count = marked_result.scalar()
 
     # 查询数据
     result = await db.execute(
@@ -85,21 +96,41 @@ async def list_items(
         approved_count=stats.get("approved", 0),
         rejected_count=stats.get("rejected", 0),
         modified_count=stats.get("modified", 0),
+        marked_count=marked_count,
     )
 
 
 @router.get("/{item_id}", response_model=DataItemResponse)
 async def get_item(
     item_id: int,
+    session_token: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_user),
+    auth_code: Optional[AuthCode] = Depends(get_auth_code_from_session),
 ):
     """获取单条语料详情"""
+    # 验证权限
+    if not current_user and not auth_code:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="需要登录或有效的授权码"
+        )
+
     result = await db.execute(select(DataItem).where(DataItem.id == item_id))
     item = result.scalar_one_or_none()
 
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="语料不存在")
+
+    # 如果是授权码访问，验证范围
+    if auth_code:
+        if item.dataset_id != auth_code.dataset_id:
+            raise HTTPException(status_code=403, detail="授权码无权访问该数据集")
+
+        if auth_code.item_ids:
+            if item.id not in auth_code.item_ids:
+                raise HTTPException(status_code=403, detail="该语料不在授权范围内")
+        elif item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
+            raise HTTPException(status_code=403, detail="序号超出授权范围")
 
     # 规范化返回的 JSON 字段，避免键名中带有 BOM 等不可见字符
     item.original_content = normalize_json_keys(item.original_content)
@@ -129,7 +160,13 @@ async def get_item_by_seq(
     if auth_code:
         if dataset_id != auth_code.dataset_id:
             raise HTTPException(status_code=403, detail="授权码无权访问该数据集")
-        if seq_num < auth_code.item_start or seq_num > auth_code.item_end:
+
+        # 优先检查 item_ids
+        if auth_code.item_ids:
+            # 这里需要查询 seq_num 对应的 item_id 是否在 item_ids 中
+            # 但为了性能，我们先查询出 item，再检查 ID
+            pass  # 将在查询到 item 后检查
+        elif seq_num < auth_code.item_start or seq_num > auth_code.item_end:
             raise HTTPException(status_code=403, detail="序号超出授权范围")
 
     result = await db.execute(
@@ -141,6 +178,11 @@ async def get_item_by_seq(
 
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="语料不存在")
+
+    # 再次检查授权范围 (针对 item_ids)
+    if auth_code and auth_code.item_ids:
+        if item.id not in auth_code.item_ids:
+            raise HTTPException(status_code=403, detail="该语料不在授权范围内")
 
     # 规范化返回的 JSON 字段，避免键名中带有 BOM 等不可见字符
     item.original_content = normalize_json_keys(item.original_content)
@@ -208,7 +250,11 @@ async def update_item(
     if auth_code:
         if item.dataset_id != auth_code.dataset_id:
             raise HTTPException(status_code=403, detail="授权码无权访问该数据集")
-        if item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
+
+        if auth_code.item_ids:
+            if item.id not in auth_code.item_ids:
+                raise HTTPException(status_code=403, detail="该语料不在授权范围内")
+        elif item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
             raise HTTPException(status_code=403, detail="序号超出授权范围")
 
     # 创建修改记录（仅登录用户）
@@ -229,8 +275,13 @@ async def update_item(
     item.current_content = normalize_json_keys(update_data.current_content)
     if update_data.status:
         item.status = update_data.status
-    else:
+    elif item.current_content != item.original_content:
+        # 只有内容真正改变时才设置为 MODIFIED
         item.status = ItemStatus.MODIFIED
+
+    if update_data.is_marked is not None:
+        item.is_marked = update_data.is_marked
+
     if current_user:
         item.reviewed_by = current_user.id
     elif auth_code:
@@ -277,7 +328,11 @@ async def approve_item(
     if auth_code:
         if item.dataset_id != auth_code.dataset_id:
             raise HTTPException(status_code=403, detail="授权码无权访问该数据集")
-        if item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
+
+        if auth_code.item_ids:
+            if item.id not in auth_code.item_ids:
+                raise HTTPException(status_code=403, detail="该语料不在授权范围内")
+        elif item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
             raise HTTPException(status_code=403, detail="序号超出授权范围")
 
     item.status = ItemStatus.APPROVED
@@ -327,7 +382,11 @@ async def reject_item(
     if auth_code:
         if item.dataset_id != auth_code.dataset_id:
             raise HTTPException(status_code=403, detail="授权码无权访问该数据集")
-        if item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
+
+        if auth_code.item_ids:
+            if item.id not in auth_code.item_ids:
+                raise HTTPException(status_code=403, detail="该语料不在授权范围内")
+        elif item.seq_num < auth_code.item_start or item.seq_num > auth_code.item_end:
             raise HTTPException(status_code=403, detail="序号超出授权范围")
 
     item.status = ItemStatus.REJECTED

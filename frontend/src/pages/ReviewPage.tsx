@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Button, Space, Tag, Spin, message, Input, Typography, Statistic, Row, Col } from 'antd'
 import {
   ArrowLeftOutlined,
-  LeftOutlined,
-  RightOutlined,
   CheckOutlined,
   CloseOutlined,
   EditOutlined,
+  LeftOutlined,
+  RightOutlined,
   SaveOutlined,
 } from '@ant-design/icons'
-import { useHotkeys } from 'react-hotkeys-hook'
+import { Button, Card, Col, Input, Row, Space, Spin, Statistic, Tag, Typography, message } from 'antd'
+import { useEffect, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { itemsApi, datasetsApi } from '../services/api'
+import { useHotkeys } from 'react-hotkeys-hook'
+import { useNavigate, useParams } from 'react-router-dom'
+import { datasetsApi, itemsApi } from '../services/api'
 import { useReviewStore } from '../stores/reviewStore'
 
 const { Title, Text } = Typography
@@ -155,7 +155,7 @@ export default function ReviewPage() {
   useHotkeys('ctrl+enter', handleApprove, { enabled: !isEditing, preventDefault: true })
   useHotkeys('ctrl+shift+enter', handleReject, { enabled: !isEditing, preventDefault: true })
   useHotkeys('ctrl+e', () => setEditing(true), { enabled: !isEditing, preventDefault: true })
-  useHotkeys('ctrl+s', handleSave, { enabled: isEditing, preventDefault: true })
+  useHotkeys('alt+s', handleSave, { enabled: isEditing, preventDefault: true })
   useHotkeys('escape', () => setEditing(false), { enabled: isEditing })
 
   // 获取内容文本
@@ -298,7 +298,7 @@ export default function ReviewPage() {
         </Space>
         <Space>
           <Text type="secondary">
-            快捷键: PgUp/PgDn 翻页 | Ctrl+Enter 通过 | Ctrl+Shift+Enter 拒绝 | Ctrl+E 编辑 | Ctrl+S 保存
+            快捷键: PgUp/PgDn 翻页 | Ctrl+Enter 通过 | Ctrl+Shift+Enter 拒绝 | Ctrl+E 编辑 | Alt+S 保存
           </Text>
         </Space>
       </div>

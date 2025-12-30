@@ -2,7 +2,7 @@ import random
 import string
 
 from app.core.database import Base
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -19,6 +19,9 @@ class AuthCode(Base):
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=False)
     item_start = Column(Integer, nullable=False)  # 起始序号
     item_end = Column(Integer, nullable=False)  # 结束序号
+    item_ids = Column(
+        JSON, nullable=True
+    )  # 指定的语料ID列表 (可选, 若存在则优先于范围)
 
     # 权限设置
     permission = Column(String(20), default="edit")  # view, comment, edit

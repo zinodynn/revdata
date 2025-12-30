@@ -39,6 +39,7 @@ async def create_auth_code(
         dataset_id=data.dataset_id,
         item_start=data.item_start,
         item_end=data.item_end,
+        item_ids=data.item_ids,
         permission=data.permission,
         max_online=data.max_online,
         max_verify_count=data.max_verify_count,
@@ -145,6 +146,7 @@ async def verify_auth_code(
         dataset_id=auth_code.dataset_id,
         item_start=auth_code.item_start,
         item_end=auth_code.item_end,
+        item_ids=auth_code.item_ids,
         permission=auth_code.permission,
         session_token=session_token,
     )
