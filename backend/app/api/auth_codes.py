@@ -2,6 +2,10 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.auth_code import AuthCode, AuthCodeReviewedItem, AuthCodeSession
@@ -11,9 +15,6 @@ from app.schemas.auth_code import (
     AuthCodeResponse,
     AuthCodeVerifyResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/auth-codes", tags=["auth-codes"])
 
@@ -39,6 +40,7 @@ async def create_auth_code(
         dataset_id=data.dataset_id,
         item_start=data.item_start,
         item_end=data.item_end,
+        item_ids=data.item_ids,
         permission=data.permission,
         max_online=data.max_online,
         max_verify_count=data.max_verify_count,
@@ -145,6 +147,7 @@ async def verify_auth_code(
         dataset_id=auth_code.dataset_id,
         item_start=auth_code.item_start,
         item_end=auth_code.item_end,
+        item_ids=auth_code.item_ids,
         permission=auth_code.permission,
         session_token=session_token,
     )

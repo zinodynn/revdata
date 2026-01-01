@@ -7,15 +7,7 @@ import {
   SettingOutlined,
   SunOutlined,
 } from '@ant-design/icons'
-import {
-  Button,
-  ConfigProvider,
-  Space,
-  Spin,
-  Typography,
-  message,
-  theme,
-} from 'antd'
+import { Button, ConfigProvider, Space, Spin, Typography, message, theme } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -46,7 +38,7 @@ export default function PureReviewPage() {
   const [currentIndex, setCurrentIndex] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  
+
   // 编辑状态
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState<any>(null)
@@ -62,25 +54,28 @@ export default function PureReviewPage() {
   }, [datasetId])
 
   // 获取语料
-  const fetchItem = useCallback(async (index: number) => {
-    if (!datasetId) return
-    setLoading(true)
-    try {
-      const res = await itemsApi.list(parseInt(datasetId), index, 1)
-      const { items, total } = res.data
-      setTotalItems(total)
-      if (items.length > 0) {
-        setCurrentItem(items[0])
-        setCurrentIndex(index)
-        setEditingContent(items[0].current_content)
-        setEditingField(null)
+  const fetchItem = useCallback(
+    async (index: number) => {
+      if (!datasetId) return
+      setLoading(true)
+      try {
+        const res = await itemsApi.list(parseInt(datasetId), index, 1)
+        const { items, total } = res.data
+        setTotalItems(total)
+        if (items.length > 0) {
+          setCurrentItem(items[0])
+          setCurrentIndex(index)
+          setEditingContent(items[0].current_content)
+          setEditingField(null)
+        }
+      } catch (error) {
+        message.error('获取语料失败')
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      message.error('获取语料失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [datasetId])
+    },
+    [datasetId],
+  )
 
   useEffect(() => {
     const seq = searchParams.get('seq')
@@ -160,8 +155,14 @@ export default function PureReviewPage() {
   useHotkeys(hotkeys.nextItem, goNext, { enabled: !editingField })
   useHotkeys(hotkeys.approve, handleApprove, { enabled: !editingField, preventDefault: true })
   useHotkeys(hotkeys.reject, handleReject, { enabled: !editingField, preventDefault: true })
-  useHotkeys(hotkeys.focusQ, () => startEdit('q_0'), { enabled: !editingField, preventDefault: true })
-  useHotkeys(hotkeys.focusA, () => startEdit('a_0'), { enabled: !editingField, preventDefault: true })
+  useHotkeys(hotkeys.focusQ, () => startEdit('q_0'), {
+    enabled: !editingField,
+    preventDefault: true,
+  })
+  useHotkeys(hotkeys.focusA, () => startEdit('a_0'), {
+    enabled: !editingField,
+    preventDefault: true,
+  })
   useHotkeys(hotkeys.save, handleSave, { enabled: !!editingField, preventDefault: true })
   useHotkeys(hotkeys.cancel, handleCancel, { enabled: !!editingField })
 
@@ -193,11 +194,7 @@ export default function PureReviewPage() {
           }}
         >
           <Space>
-            <Button
-              type="text"
-              icon={<CloseOutlined />}
-              onClick={() => navigate('/tasks')}
-            />
+            <Button type="text" icon={<CloseOutlined />} onClick={() => navigate('/tasks')} />
             <Title level={5} style={{ margin: 0, color: isDark ? '#e8e8e8' : '#333' }}>
               {dataset?.name || '加载中...'}
             </Title>
@@ -205,11 +202,23 @@ export default function PureReviewPage() {
               {currentIndex} / {totalItems}
             </Text>
             {currentItem?.status && (
-              <Text 
-                type={currentItem.status === 'approved' ? 'success' : currentItem.status === 'rejected' ? 'danger' : 'secondary'}
+              <Text
+                type={
+                  currentItem.status === 'approved'
+                    ? 'success'
+                    : currentItem.status === 'rejected'
+                      ? 'danger'
+                      : 'secondary'
+                }
                 style={{ marginLeft: 8 }}
               >
-                [{currentItem.status === 'approved' ? '已通过' : currentItem.status === 'rejected' ? '已拒绝' : '待审核'}]
+                [
+                {currentItem.status === 'approved'
+                  ? '已通过'
+                  : currentItem.status === 'rejected'
+                    ? '已拒绝'
+                    : '待审核'}
+                ]
               </Text>
             )}
           </Space>
@@ -220,11 +229,7 @@ export default function PureReviewPage() {
               icon={isDark ? <SunOutlined /> : <MoonOutlined />}
               onClick={toggleTheme}
             />
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              onClick={() => setSettingsOpen(true)}
-            />
+            <Button type="text" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)} />
             <Button
               type="text"
               icon={<QuestionCircleOutlined />}
@@ -297,19 +302,10 @@ export default function PureReviewPage() {
               </>
             ) : (
               <>
-                <Button 
-                  type="primary" 
-                  danger 
-                  onClick={handleReject}
-                  loading={saving}
-                >
+                <Button type="primary" danger onClick={handleReject} loading={saving}>
                   拒绝 (Ctrl+Shift+Enter)
                 </Button>
-                <Button 
-                  type="primary" 
-                  onClick={handleApprove}
-                  loading={saving}
-                >
+                <Button type="primary" onClick={handleApprove} loading={saving}>
                   通过 (Ctrl+Enter)
                 </Button>
               </>

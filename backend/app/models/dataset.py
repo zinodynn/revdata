@@ -1,11 +1,12 @@
 import enum
 from datetime import datetime
 
-from app.core.database import Base
 from sqlalchemy import JSON, Column, DateTime
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
+from app.core.database import Base
 
 
 class DatasetFormat(str, enum.Enum):

@@ -1,26 +1,26 @@
 import {
-    ArrowLeftOutlined,
-    DatabaseOutlined,
-    EditOutlined,
-    ExportOutlined,
-    PlayCircleOutlined,
-    SettingOutlined,
+  ArrowLeftOutlined,
+  DatabaseOutlined,
+  EditOutlined,
+  ExportOutlined,
+  PlayCircleOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import {
-    Alert,
-    Breadcrumb,
-    Button,
-    Card,
-    Col,
-    Descriptions,
-    message,
-    Row,
-    Space,
-    Spin,
-    Statistic,
-    Tabs,
-    Tag,
-    Typography,
+  Alert,
+  Breadcrumb,
+  Button,
+  Card,
+  Col,
+  Descriptions,
+  message,
+  Row,
+  Space,
+  Spin,
+  Statistic,
+  Tabs,
+  Tag,
+  Typography,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -164,9 +164,7 @@ export default function DatasetDetailPage() {
         message="数据集不存在"
         type="error"
         showIcon
-        action={
-          <Button onClick={() => navigate('/datasets')}>返回列表</Button>
-        }
+        action={<Button onClick={() => navigate('/datasets')}>返回列表</Button>}
       />
     )
   }
@@ -295,10 +293,7 @@ export default function DatasetDetailPage() {
       <Card
         title={
           <Space>
-            <Button
-              icon={<ArrowLeftOutlined />}
-              onClick={() => navigate('/datasets')}
-            />
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/datasets')} />
             <Title level={4} style={{ margin: 0 }}>
               {dataset.name}
             </Title>
@@ -324,21 +319,14 @@ export default function DatasetDetailPage() {
               导出 JSONL
             </Button>
             {isAdmin && (
-              <Button
-                icon={<EditOutlined />}
-                onClick={() => setActiveTab('config')}
-              >
+              <Button icon={<EditOutlined />} onClick={() => setActiveTab('config')}>
                 配置映射
               </Button>
             )}
           </Space>
         }
       >
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={tabItems}
-        />
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
       </Card>
     </div>
   )

@@ -45,7 +45,11 @@ export default function ExportModal({ open, onClose, datasetId, datasetName }: E
 
   return (
     <Modal
-      title={<><DownloadOutlined /> 导出数据集</>}
+      title={
+        <>
+          <DownloadOutlined /> 导出数据集
+        </>
+      }
       open={open}
       onCancel={onClose}
       footer={null}

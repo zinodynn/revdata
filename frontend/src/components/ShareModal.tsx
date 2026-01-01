@@ -1,16 +1,16 @@
 import { CopyOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons'
 import {
-    Button,
-    DatePicker,
-    Form,
-    InputNumber,
-    message,
-    Modal,
-    Select,
-    Space,
-    Table,
-    Tag,
-    Tooltip,
+  Button,
+  DatePicker,
+  Form,
+  InputNumber,
+  message,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -78,15 +78,15 @@ export default function ShareModal({ open, onClose, datasetId }: ShareModalProps
       if (values.max_access_count) {
         data.max_access_count = values.max_access_count
       }
-      
+
       const res = await shareApi.create(data)
       message.success('创建成功')
-      
+
       // 复制链接到剪贴板
       const shareUrl = `${window.location.origin}/share/${res.data.token}`
       navigator.clipboard.writeText(shareUrl)
       message.info('链接已复制到剪贴板')
-      
+
       form.resetFields()
       fetchLinks()
     } catch (error) {
@@ -132,8 +132,7 @@ export default function ShareModal({ open, onClose, datasetId }: ShareModalProps
       title: '过期时间',
       dataIndex: 'expires_at',
       width: 150,
-      render: (date: string | null) =>
-        date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '永不过期',
+      render: (date: string | null) => (date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '永不过期'),
     },
     {
       title: '状态',
@@ -173,7 +172,11 @@ export default function ShareModal({ open, onClose, datasetId }: ShareModalProps
 
   return (
     <Modal
-      title={<><LinkOutlined /> 分享管理</>}
+      title={
+        <>
+          <LinkOutlined /> 分享管理
+        </>
+      }
       open={open}
       onCancel={onClose}
       footer={null}

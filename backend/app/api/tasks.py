@@ -1,15 +1,16 @@
 from datetime import datetime
 from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_current_admin, get_current_user
 from app.core.database import get_db
 from app.models.data_item import DataItem, ItemStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskDelegate, TaskListResponse, TaskResponse
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -18,15 +19,16 @@ router = APIRouter()
 async def create_task(
     task_in: TaskCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_user),  # 允许普通用户创建任务(委派)
 ):
-    """创建任务 (管理员)"""
+    """创建任务 (管理员或用户委派)"""
     task = Task(
         dataset_id=task_in.dataset_id,
         assigner_id=current_user.id,
         assignee_id=task_in.assignee_id,
         item_start=task_in.item_start,
         item_end=task_in.item_end,
+        item_ids=task_in.item_ids,
         priority=task_in.priority or 0,
         note=task_in.note,
         due_date=task_in.due_date,
@@ -34,24 +36,34 @@ async def create_task(
     db.add(task)
 
     # 更新对应语料的分配
-    await db.execute(
-        DataItem.__table__.update()
-        .where(
-            and_(
-                DataItem.dataset_id == task_in.dataset_id,
-                DataItem.seq_num >= task_in.item_start,
-                DataItem.seq_num <= task_in.item_end,
-            )
+    if task_in.item_ids:
+        await db.execute(
+            DataItem.__table__.update()
+            .where(DataItem.id.in_(task_in.item_ids))
+            .values(assigned_to=task_in.assignee_id)
         )
-        .values(assigned_to=task_in.assignee_id)
-    )
+    else:
+        await db.execute(
+            DataItem.__table__.update()
+            .where(
+                and_(
+                    DataItem.dataset_id == task_in.dataset_id,
+                    DataItem.seq_num >= task_in.item_start,
+                    DataItem.seq_num <= task_in.item_end,
+                )
+            )
+            .values(assigned_to=task_in.assignee_id)
+        )
 
     await db.commit()
     await db.refresh(task)
 
     # 计算进度
     response = TaskResponse.model_validate(task)
-    response.total_items = task.item_end - task.item_start + 1
+    if task.item_ids:
+        response.total_items = len(task.item_ids)
+    else:
+        response.total_items = task.item_end - task.item_start + 1
     response.reviewed_items = 0
 
     return response
@@ -79,19 +91,32 @@ async def list_my_tasks(
     task_responses = []
     for task in tasks:
         response = TaskResponse.model_validate(task)
-        response.total_items = task.item_end - task.item_start + 1
+        if task.item_ids:
+            response.total_items = len(task.item_ids)
 
-        # 查询已审核数量
-        reviewed_result = await db.execute(
-            select(func.count(DataItem.id)).where(
-                and_(
-                    DataItem.dataset_id == task.dataset_id,
-                    DataItem.seq_num >= task.item_start,
-                    DataItem.seq_num <= task.item_end,
-                    DataItem.status != ItemStatus.PENDING,
+            # 查询已审核数量 (item_ids)
+            reviewed_result = await db.execute(
+                select(func.count(DataItem.id)).where(
+                    and_(
+                        DataItem.id.in_(task.item_ids),
+                        DataItem.status != ItemStatus.PENDING,
+                    )
                 )
             )
-        )
+        else:
+            response.total_items = task.item_end - task.item_start + 1
+
+            # 查询已审核数量 (range)
+            reviewed_result = await db.execute(
+                select(func.count(DataItem.id)).where(
+                    and_(
+                        DataItem.dataset_id == task.dataset_id,
+                        DataItem.seq_num >= task.item_start,
+                        DataItem.seq_num <= task.item_end,
+                        DataItem.status != ItemStatus.PENDING,
+                    )
+                )
+            )
         response.reviewed_items = reviewed_result.scalar()
         task_responses.append(response)
 
@@ -112,18 +137,28 @@ async def get_task(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
 
     response = TaskResponse.model_validate(task)
-    response.total_items = task.item_end - task.item_start + 1
-
-    reviewed_result = await db.execute(
-        select(func.count(DataItem.id)).where(
-            and_(
-                DataItem.dataset_id == task.dataset_id,
-                DataItem.seq_num >= task.item_start,
-                DataItem.seq_num <= task.item_end,
-                DataItem.status != ItemStatus.PENDING,
+    if task.item_ids:
+        response.total_items = len(task.item_ids)
+        reviewed_result = await db.execute(
+            select(func.count(DataItem.id)).where(
+                and_(
+                    DataItem.id.in_(task.item_ids),
+                    DataItem.status != ItemStatus.PENDING,
+                )
             )
         )
-    )
+    else:
+        response.total_items = task.item_end - task.item_start + 1
+        reviewed_result = await db.execute(
+            select(func.count(DataItem.id)).where(
+                and_(
+                    DataItem.dataset_id == task.dataset_id,
+                    DataItem.seq_num >= task.item_start,
+                    DataItem.seq_num <= task.item_end,
+                    DataItem.status != ItemStatus.PENDING,
+                )
+            )
+        )
     response.reviewed_items = reviewed_result.scalar()
 
     return response
@@ -156,6 +191,7 @@ async def delegate_task(
         assignee_id=delegate_data.new_assignee_id,
         item_start=task.item_start,
         item_end=task.item_end,
+        item_ids=task.item_ids,
         priority=task.priority,
         note=delegate_data.note or f"从任务 #{task.id} 委派",
         due_date=task.due_date,
@@ -167,23 +203,33 @@ async def delegate_task(
     task.status = TaskStatus.DELEGATED
 
     # 更新语料分配
-    await db.execute(
-        DataItem.__table__.update()
-        .where(
-            and_(
-                DataItem.dataset_id == task.dataset_id,
-                DataItem.seq_num >= task.item_start,
-                DataItem.seq_num <= task.item_end,
-            )
+    if task.item_ids:
+        await db.execute(
+            DataItem.__table__.update()
+            .where(DataItem.id.in_(task.item_ids))
+            .values(assigned_to=delegate_data.new_assignee_id)
         )
-        .values(assigned_to=delegate_data.new_assignee_id)
-    )
+    else:
+        await db.execute(
+            DataItem.__table__.update()
+            .where(
+                and_(
+                    DataItem.dataset_id == task.dataset_id,
+                    DataItem.seq_num >= task.item_start,
+                    DataItem.seq_num <= task.item_end,
+                )
+            )
+            .values(assigned_to=delegate_data.new_assignee_id)
+        )
 
     await db.commit()
     await db.refresh(new_task)
 
     response = TaskResponse.model_validate(new_task)
-    response.total_items = new_task.item_end - new_task.item_start + 1
+    if new_task.item_ids:
+        response.total_items = len(new_task.item_ids)
+    else:
+        response.total_items = new_task.item_end - new_task.item_start + 1
     response.reviewed_items = 0
 
     return response

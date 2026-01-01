@@ -2,14 +2,15 @@ import secrets
 import string
 from typing import List
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/users", tags=["users"])
 

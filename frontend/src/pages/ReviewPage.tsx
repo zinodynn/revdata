@@ -1,18 +1,30 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Button, Space, Tag, Spin, message, Input, Typography, Statistic, Row, Col } from 'antd'
 import {
   ArrowLeftOutlined,
-  LeftOutlined,
-  RightOutlined,
   CheckOutlined,
   CloseOutlined,
   EditOutlined,
+  LeftOutlined,
+  RightOutlined,
   SaveOutlined,
 } from '@ant-design/icons'
-import { useHotkeys } from 'react-hotkeys-hook'
+import {
+  Button,
+  Card,
+  Col,
+  Input,
+  Row,
+  Space,
+  Spin,
+  Statistic,
+  Tag,
+  Typography,
+  message,
+} from 'antd'
+import { useEffect, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { itemsApi, datasetsApi } from '../services/api'
+import { useHotkeys } from 'react-hotkeys-hook'
+import { useNavigate, useParams } from 'react-router-dom'
+import { datasetsApi, itemsApi } from '../services/api'
 import { useReviewStore } from '../stores/reviewStore'
 
 const { Title, Text } = Typography
@@ -66,7 +78,8 @@ export default function ReviewPage() {
     setLoading(true)
     try {
       const res = await itemsApi.list(parseInt(datasetId), page, 1)
-      const { items, total, pending_count, approved_count, rejected_count, modified_count } = res.data
+      const { items, total, pending_count, approved_count, rejected_count, modified_count } =
+        res.data
       setItems(items, total)
       setStats({
         pending: pending_count,
@@ -155,7 +168,7 @@ export default function ReviewPage() {
   useHotkeys('ctrl+enter', handleApprove, { enabled: !isEditing, preventDefault: true })
   useHotkeys('ctrl+shift+enter', handleReject, { enabled: !isEditing, preventDefault: true })
   useHotkeys('ctrl+e', () => setEditing(true), { enabled: !isEditing, preventDefault: true })
-  useHotkeys('ctrl+s', handleSave, { enabled: isEditing, preventDefault: true })
+  useHotkeys('alt+s', handleSave, { enabled: isEditing, preventDefault: true })
   useHotkeys('escape', () => setEditing(false), { enabled: isEditing })
 
   // 获取内容文本
@@ -262,15 +275,11 @@ export default function ReviewPage() {
         <div className="qa-container">
           <div className="qa-column qa-question">
             <Text strong>问题 (Q)</Text>
-            <div style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
-              {messages[0]?.content}
-            </div>
+            <div style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{messages[0]?.content}</div>
           </div>
           <div className="qa-column qa-answer">
             <Text strong>回答 (A)</Text>
-            <div style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
-              {messages[1]?.content}
-            </div>
+            <div style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{messages[1]?.content}</div>
           </div>
         </div>
       )
@@ -298,7 +307,8 @@ export default function ReviewPage() {
         </Space>
         <Space>
           <Text type="secondary">
-            快捷键: PgUp/PgDn 翻页 | Ctrl+Enter 通过 | Ctrl+Shift+Enter 拒绝 | Ctrl+E 编辑 | Ctrl+S 保存
+            快捷键: PgUp/PgDn 翻页 | Ctrl+Enter 通过 | Ctrl+Shift+Enter 拒绝 | Ctrl+E 编辑 | Alt+S
+            保存
           </Text>
         </Space>
       </div>

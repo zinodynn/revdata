@@ -2,6 +2,7 @@ import {
   ArrowLeftOutlined,
   DownloadOutlined,
   FastForwardOutlined,
+  FlagOutlined,
   LeftOutlined,
   RightOutlined,
   SendOutlined,
@@ -10,23 +11,22 @@ import {
 import {
   Button,
   Card,
-  Col,
   Dropdown,
   InputNumber,
-  Row,
   Space,
   Spin,
   Statistic,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import AuthCodeModal from '../components/AuthCodeModal'
 import DelegateModal from '../components/DelegateModal'
 import ExportModal from '../components/ExportModal'
+import MarkedItemsModal from '../components/MarkedItemsModal'
 import QACardUnified from '../components/QACardUnified'
 import ShareModal from '../components/ShareModal'
 import { datasetsApi, itemsApi } from '../services/api'
@@ -62,24 +62,34 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const { datasetId } = useParams<{ datasetId: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  
+
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dataset, setDataset] = useState<any>(null)
   const [currentItem, setCurrentItem] = useState<any>(null)
   const [currentIndex, setCurrentIndex] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
-  const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, modified: 0 })
+  const [stats, setStats] = useState({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    modified: 0,
+    marked: 0,
+  })
   const [jumpToSeq, setJumpToSeq] = useState<number | null>(null)
-  
+
   // 编辑状态
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState<any>(null)
-  
+
   // 弹窗状态
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [exportModalOpen, setExportModalOpen] = useState(false)
   const [delegateModalOpen, setDelegateModalOpen] = useState(false)
+  const [authCodeModalOpen, setAuthCodeModalOpen] = useState(false)
+  const [markedItemsModalOpen, setMarkedItemsModalOpen] = useState(false)
+  const [markedItemIds, setMarkedItemIds] = useState<number[]>([])
+  const [headerExpanded, setHeaderExpanded] = useState(false)
 
   // 是否可编辑
   const canEdit = !shareToken || sharePermission === 'edit'
@@ -92,37 +102,56 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   }, [datasetId])
 
   // 获取语料
-  const fetchItem = useCallback(async (index: number) => {
-    if (!datasetId) return
-    setLoading(true)
-    try {
-      const res = await itemsApi.list(parseInt(datasetId), index, 1)
-      const { items, total, pending_count, approved_count, rejected_count, modified_count } = res.data
-      setTotalItems(total)
-      setStats({
-        pending: pending_count || 0,
-        approved: approved_count || 0,
-        rejected: rejected_count || 0,
-        modified: modified_count || 0,
-      })
-      if (items.length > 0) {
-        // 防御性规范化，移除可能的 BOM 键，确保前端显示正常
-        const { normalizeJsonKeys } = await import('../utils/json')
-        const normalized = normalizeJsonKeys(items[0])
-        console.debug('[ReviewPageV2] fetchItem normalized', normalized)
-        ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
-        ;(window as any).__revdata_debug_logs.push({ tag: 'ReviewPageV2', t: Date.now(), type: 'fetchItem_normalized', seq: index, normalizedKeys: Object.keys(normalized || {}), currentKeys: Object.keys(normalized?.current_content || {}) })
-        setCurrentItem(normalized)
-        setCurrentIndex(index)
-        setEditingContent(JSON.parse(JSON.stringify(normalized.current_content)))
-        setEditingField(null)
+  const fetchItem = useCallback(
+    async (index: number) => {
+      if (!datasetId) return
+      setLoading(true)
+      try {
+        const res = await itemsApi.list(parseInt(datasetId), index, 1)
+        const {
+          items,
+          total,
+          pending_count,
+          approved_count,
+          rejected_count,
+          modified_count,
+          marked_count,
+        } = res.data
+        setTotalItems(total)
+        setStats({
+          pending: pending_count || 0,
+          approved: approved_count || 0,
+          rejected: rejected_count || 0,
+          modified: modified_count || 0,
+          marked: marked_count || 0,
+        })
+        if (items.length > 0) {
+          // 防御性规范化，移除可能的 BOM 键，确保前端显示正常
+          const { normalizeJsonKeys } = await import('../utils/json')
+          const normalized = normalizeJsonKeys(items[0])
+          console.debug('[ReviewPageV2] fetchItem normalized', normalized)
+          ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
+          ;(window as any).__revdata_debug_logs.push({
+            tag: 'ReviewPageV2',
+            t: Date.now(),
+            type: 'fetchItem_normalized',
+            seq: index,
+            normalizedKeys: Object.keys(normalized || {}),
+            currentKeys: Object.keys(normalized?.current_content || {}),
+          })
+          setCurrentItem(normalized)
+          setCurrentIndex(index)
+          setEditingContent(JSON.parse(JSON.stringify(normalized.current_content)))
+          setEditingField(null)
+        }
+      } catch (error) {
+        message.error('获取语料失败')
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      message.error('获取语料失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [datasetId])
+    },
+    [datasetId],
+  )
 
   useEffect(() => {
     const seq = searchParams.get('seq')
@@ -165,17 +194,33 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       message.warning('当前模式不可编辑')
       return
     }
-    console.debug('[ReviewPageV2] startEdit', field, { seq: currentItem?.seq_num, id: currentItem?.id, keys: Object.keys(currentItem?.current_content || {}) })
+    console.debug('[ReviewPageV2] startEdit', field, {
+      seq: currentItem?.seq_num,
+      id: currentItem?.id,
+      keys: Object.keys(currentItem?.current_content || {}),
+    })
     // push to global debug logs (temporary)
     ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
-    ;(window as any).__revdata_debug_logs.push({ tag: 'ReviewPageV2', t: Date.now(), type: 'startEdit', field, seq: currentItem?.seq_num, id: currentItem?.id })
+    ;(window as any).__revdata_debug_logs.push({
+      tag: 'ReviewPageV2',
+      t: Date.now(),
+      type: 'startEdit',
+      field,
+      seq: currentItem?.seq_num,
+      id: currentItem?.id,
+    })
 
     setEditingField(field)
     try {
       setEditingContent(JSON.parse(JSON.stringify(currentItem.current_content)))
     } catch (e) {
       console.error('[ReviewPageV2] startEdit deep copy failed', e, currentItem)
-      ;(window as any).__revdata_debug_logs.push({ tag: 'ReviewPageV2', t: Date.now(), type: 'startEdit_error', err: String(e) })
+      ;(window as any).__revdata_debug_logs.push({
+        tag: 'ReviewPageV2',
+        t: Date.now(),
+        type: 'startEdit_error',
+        err: String(e),
+      })
       setEditingContent(currentItem?.current_content)
     }
   }
@@ -232,16 +277,81 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     }
   }
 
+  // 标记/取消标记
+  const handleMark = async () => {
+    if (!currentItem || !canEdit || editingField) return
+    setSaving(true)
+    try {
+      const newMarked = !currentItem.is_marked
+      await itemsApi.update(currentItem.id, {
+        current_content: currentItem.current_content,
+        is_marked: newMarked,
+      })
+      message.success(newMarked ? '已标记' : '已取消标记')
+      fetchItem(currentIndex)
+    } catch (error) {
+      message.error('操作失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 委托标记的语料
+  const handleDelegateMarked = async () => {
+    if (!datasetId) return
+    setLoading(true)
+    try {
+      // 获取所有标记的语料
+      const res = await itemsApi.list(parseInt(datasetId), 1, 1000, undefined, true)
+      const items = res.data.items
+      if (items.length === 0) {
+        message.info('没有标记的语料')
+        return
+      }
+      const ids = items.map((item: any) => item.id)
+      setMarkedItemIds(ids)
+      setAuthCodeModalOpen(true)
+    } catch (error) {
+      message.error('获取标记语料失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGenerateAuthCode = (ids: number[]) => {
+    setMarkedItemIds(ids)
+    setAuthCodeModalOpen(true)
+  }
+
+  const handleDelegateToUser = (ids: number[]) => {
+    setMarkedItemIds(ids)
+    setDelegateModalOpen(true)
+  }
+
   // 快捷键
   useHotkeys('pageup', goPrev, { enabled: !editingField })
   useHotkeys('pagedown', goNext, { enabled: !editingField })
-  useHotkeys('ctrl+enter', handleApprove, { enabled: !editingField && canEdit, preventDefault: true })
-  useHotkeys('ctrl+shift+enter', handleReject, { enabled: !editingField && canEdit, preventDefault: true })
-  useHotkeys('q', () => startEdit('q_0'), { enabled: !editingField && canEdit, preventDefault: true })
-  useHotkeys('a', () => startEdit('a_0'), { enabled: !editingField && canEdit, preventDefault: true })
-  useHotkeys('ctrl+s', handleSave, { enabled: !!editingField && canEdit, preventDefault: true })
+  useHotkeys('ctrl+enter', handleApprove, {
+    enabled: !editingField && canEdit,
+    preventDefault: true,
+  })
+  useHotkeys('ctrl+shift+enter', handleReject, {
+    enabled: !editingField && canEdit,
+    preventDefault: true,
+  })
+  useHotkeys('q', () => startEdit('q_0'), {
+    enabled: !editingField && canEdit,
+    preventDefault: true,
+  })
+  useHotkeys('a', () => startEdit('a_0'), {
+    enabled: !editingField && canEdit,
+    preventDefault: true,
+  })
+  useHotkeys('alt+s', handleSave, { enabled: !!editingField && canEdit, preventDefault: true })
   useHotkeys('escape', handleCancel, { enabled: !!editingField })
-  useHotkeys('ctrl+g', () => document.getElementById('jump-input')?.focus(), { preventDefault: true })
+  useHotkeys('ctrl+g', () => document.getElementById('jump-input')?.focus(), {
+    preventDefault: true,
+  })
   useHotkeys('ctrl+shift+n', goToNextPending, { enabled: !editingField, preventDefault: true })
 
   const actionMenuItems = [
@@ -256,12 +366,6 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       icon: <DownloadOutlined />,
       label: '导出',
       onClick: () => setExportModalOpen(true),
-    },
-    {
-      key: 'delegate',
-      icon: <SendOutlined />,
-      label: '委派',
-      onClick: () => setDelegateModalOpen(true),
     },
   ]
 
@@ -291,55 +395,109 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         </Space>
       </div>
 
-      {/* 统计 + 快捷跳转 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={4}>
-          <Card size="small">
-            <Statistic title="待审核" value={stats.pending} valueStyle={{ color: '#999' }} />
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card size="small">
-            <Statistic title="已通过" value={stats.approved} valueStyle={{ color: '#52c41a' }} />
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card size="small">
-            <Statistic title="已拒绝" value={stats.rejected} valueStyle={{ color: '#ff4d4f' }} />
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card size="small">
-            <Statistic title="已修改" value={stats.modified} valueStyle={{ color: '#faad14' }} />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card size="small">
-            <Space>
-              <Text>跳转到:</Text>
-              <InputNumber
-                id="jump-input"
-                min={1}
-                max={totalItems}
-                value={jumpToSeq}
-                onChange={(v) => setJumpToSeq(v)}
-                onPressEnter={() => jumpToSeq && goToSeq(jumpToSeq)}
-                placeholder={`1-${totalItems}`}
-                style={{ width: 100 }}
-                disabled={!!editingField}
-              />
-              <Button onClick={() => jumpToSeq && goToSeq(jumpToSeq)} disabled={!!editingField}>
-                跳转
-              </Button>
-              <Tooltip title="跳转到下一个待审核 (Ctrl+Shift+N)">
-                <Button icon={<FastForwardOutlined />} onClick={goToNextPending} disabled={!!editingField}>
-                  下一待审
-                </Button>
-              </Tooltip>
-            </Space>
-          </Card>
-        </Col>
-      </Row>
+      {/* 统计栏 (Compact & Expandable) */}
+      <div
+        style={{
+          marginBottom: 16,
+          position: 'relative',
+          zIndex: 100,
+          height: 46,
+        }}
+        onMouseEnter={() => setHeaderExpanded(true)}
+        onMouseLeave={() => setHeaderExpanded(false)}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            background: '#fff',
+            borderRadius: 8,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            padding: headerExpanded ? '12px 24px' : '8px 24px',
+            transition: 'all 0.3s ease',
+            overflow: 'hidden',
+            height: headerExpanded ? 100 : 46,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          {/* Left: Summary */}
+          <Space size="large" style={{ minWidth: 200 }}>
+            <Text strong style={{ fontSize: 16 }}>
+              进度: {currentIndex} / {totalItems}
+            </Text>
+            {!headerExpanded && (
+              <Space>
+                <Tag color="default">待审 {stats.pending}</Tag>
+                <Tag color="purple">待定 {stats.marked}</Tag>
+              </Space>
+            )}
+          </Space>
+
+          {/* Middle: Expanded Stats */}
+          <div
+            style={{
+              opacity: headerExpanded ? 1 : 0,
+              transition: 'opacity 0.2s',
+              display: 'flex',
+              gap: 32,
+              visibility: headerExpanded ? 'visible' : 'hidden',
+            }}
+          >
+            <Statistic
+              title="待审核"
+              value={stats.pending}
+              valueStyle={{ fontSize: 20, color: '#999' }}
+            />
+            <Statistic
+              title="已通过"
+              value={stats.approved}
+              valueStyle={{ fontSize: 20, color: '#52c41a' }}
+            />
+            <Statistic
+              title="已拒绝"
+              value={stats.rejected}
+              valueStyle={{ fontSize: 20, color: '#ff4d4f' }}
+            />
+            <Statistic
+              title="已修改"
+              value={stats.modified}
+              valueStyle={{ fontSize: 20, color: '#faad14' }}
+            />
+            <Statistic
+              title="待定(Marked)"
+              value={stats.marked}
+              valueStyle={{ fontSize: 20, color: '#722ed1' }}
+            />
+          </div>
+
+          {/* Right: Jump Controls */}
+          <Space>
+            <Text>跳转:</Text>
+            <InputNumber
+              size="small"
+              min={1}
+              max={totalItems}
+              value={jumpToSeq}
+              onChange={(v) => setJumpToSeq(v)}
+              onPressEnter={() => jumpToSeq && goToSeq(jumpToSeq)}
+              style={{ width: 80 }}
+              disabled={!!editingField}
+            />
+            <Button
+              size="small"
+              icon={<FastForwardOutlined />}
+              onClick={goToNextPending}
+              disabled={!!editingField}
+            >
+              下一待审
+            </Button>
+          </Space>
+        </div>
+      </div>
 
       {/* 快捷键提示 */}
       <div
@@ -358,7 +516,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           <span>Ctrl+Shift+Enter 拒绝</span>
           <span>q 编辑问题</span>
           <span>a 编辑回答</span>
-          <span>Ctrl+S 保存</span>
+          <span>Alt+S 保存</span>
           <span>Esc 取消</span>
           <span>Ctrl+G 跳转</span>
           <span>Ctrl+Shift+N 下一待审</span>
@@ -377,6 +535,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                 {statusLabels[currentItem?.status || 'pending']}
               </Tag>
               {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
+              {currentItem?.is_marked && (
+                <Tag color="purple" icon={<FlagOutlined />}>
+                  待定
+                </Tag>
+              )}
             </Space>
           }
           extra={
@@ -407,16 +570,46 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
 
       {/* 临时调试面板（编辑时显示） */}
       {editingField && (
-        <div style={{ position: 'fixed', right: 12, bottom: 12, width: 360, maxHeight: 220, overflow: 'auto', background: '#fff', border: '1px solid #e8e8e8', padding: 10, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', zIndex: 9999 }}>
-          <div style={{ fontSize: 12, marginBottom: 6 }}><strong>调试日志 (最近)</strong></div>
+        <div
+          style={{
+            position: 'fixed',
+            right: 12,
+            bottom: 12,
+            width: 360,
+            maxHeight: 220,
+            overflow: 'auto',
+            background: '#fff',
+            border: '1px solid #e8e8e8',
+            padding: 10,
+            borderRadius: 6,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            zIndex: 9999,
+          }}
+        >
+          <div style={{ fontSize: 12, marginBottom: 6 }}>
+            <strong>调试日志 (最近)</strong>
+          </div>
           <div style={{ fontSize: 12, color: '#444' }}>
-            {((window as any).__revdata_debug_logs || []).slice(-30).reverse().map((l: any, i: number) => (
-              <div key={i} style={{ marginBottom: 6, borderBottom: '1px dashed #f0f0f0', paddingBottom: 4 }}>
-                <div style={{ color: '#999', fontSize: 11 }}>{new Date(l.t).toLocaleTimeString()}</div>
-                <div><strong>{l.tag}</strong> · {l.type} {l.field ? <span>· {l.field}</span> : null}</div>
-                <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#222' }}> {JSON.stringify(l, null, 2)} </div>
-              </div>
-            ))}
+            {((window as any).__revdata_debug_logs || [])
+              .slice(-30)
+              .reverse()
+              .map((l: any, i: number) => (
+                <div
+                  key={i}
+                  style={{ marginBottom: 6, borderBottom: '1px dashed #f0f0f0', paddingBottom: 4 }}
+                >
+                  <div style={{ color: '#999', fontSize: 11 }}>
+                    {new Date(l.t).toLocaleTimeString()}
+                  </div>
+                  <div>
+                    <strong>{l.tag}</strong> · {l.type} {l.field ? <span>· {l.field}</span> : null}
+                  </div>
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#222' }}>
+                    {' '}
+                    {JSON.stringify(l, null, 2)}{' '}
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       )}
@@ -434,29 +627,41 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         }}
       >
         <Space size="large">
-          <Button size="large" icon={<LeftOutlined />} onClick={goPrev} disabled={currentIndex <= 1 || !!editingField}>
+          <Button
+            size="large"
+            icon={<LeftOutlined />}
+            onClick={goPrev}
+            disabled={currentIndex <= 1 || !!editingField}
+          >
             上一条
           </Button>
-          
+
           {editingField ? (
             <>
               <Button size="large" onClick={handleCancel}>
                 取消 (Esc)
               </Button>
               <Button size="large" type="primary" onClick={handleSave} loading={saving}>
-                保存 (Ctrl+S)
+                保存 (Alt+S)
               </Button>
             </>
           ) : (
             canEdit && (
               <>
-                <Button
-                  size="large"
-                  type="primary"
-                  danger
-                  onClick={handleReject}
-                  loading={saving}
-                >
+                <Button size="large" icon={<FlagOutlined />} onClick={handleMark} loading={saving}>
+                  {currentItem?.is_marked ? '取消标记' : '标记'}
+                </Button>
+                {stats.marked > 0 && (
+                  <Button
+                    size="large"
+                    icon={<SendOutlined />}
+                    onClick={handleDelegateMarked}
+                    loading={loading}
+                  >
+                    生成委派 ({stats.marked})
+                  </Button>
+                )}
+                <Button size="large" type="primary" danger onClick={handleReject} loading={saving}>
                   拒绝 (Ctrl+Shift+Enter)
                 </Button>
                 <Button
@@ -471,7 +676,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               </>
             )
           )}
-          
+
           <Button
             size="large"
             icon={<RightOutlined />}
@@ -484,6 +689,19 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       </div>
 
       {/* 弹窗 */}
+      <AuthCodeModal
+        open={authCodeModalOpen}
+        onClose={() => setAuthCodeModalOpen(false)}
+        datasetId={parseInt(datasetId || '0')}
+        itemIds={markedItemIds}
+      />
+      <MarkedItemsModal
+        open={markedItemsModalOpen}
+        onClose={() => setMarkedItemsModalOpen(false)}
+        datasetId={parseInt(datasetId || '0')}
+        onGenerateAuthCode={handleGenerateAuthCode}
+        onDelegate={handleDelegateToUser}
+      />
       <ShareModal
         open={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
@@ -501,6 +719,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         datasetId={parseInt(datasetId || '0')}
         currentItemSeq={currentItem?.seq_num || 1}
         totalItems={totalItems}
+        itemIds={markedItemIds}
       />
     </div>
   )

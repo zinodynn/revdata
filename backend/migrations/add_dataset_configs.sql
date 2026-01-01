@@ -2,11 +2,11 @@
 -- 执行日期: 2025-12-28
 
 -- 添加 field_mapping 列 (JSON类型，存储字段映射配置)
-ALTER TABLE datasets 
+ALTER TABLE datasets
 ADD COLUMN IF NOT EXISTS field_mapping JSONB DEFAULT NULL;
 
 -- 添加 review_config 列 (JSON类型，存储审核规则配置)
-ALTER TABLE datasets 
+ALTER TABLE datasets
 ADD COLUMN IF NOT EXISTS review_config JSONB DEFAULT NULL;
 
 -- 添加注释
@@ -16,5 +16,5 @@ COMMENT ON COLUMN datasets.review_config IS '审核规则配置：是否必填�
 -- 验证列已添加
 SELECT column_name, data_type, is_nullable, column_default
 FROM information_schema.columns
-WHERE table_name = 'datasets' 
+WHERE table_name = 'datasets'
   AND column_name IN ('field_mapping', 'review_config');

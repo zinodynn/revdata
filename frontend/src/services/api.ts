@@ -17,7 +17,7 @@ api.interceptors.request.use(
   },
   (error) => {
     return Promise.reject(error)
-  }
+  },
 )
 
 // 响应拦截器 - 处理错误
@@ -29,7 +29,7 @@ api.interceptors.response.use(
       window.location.href = '/login'
     }
     return Promise.reject(error)
-  }
+  },
 )
 
 export default api
@@ -43,7 +43,7 @@ const publicApi = axios.create({
 // 公开API不自动跳转登录
 publicApi.interceptors.response.use(
   (response) => response,
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 )
 
 // Auth API
@@ -68,13 +68,16 @@ export const datasetsApi = {
   list: (page = 1, pageSize = 20) =>
     api.get('/datasets', { params: { page, page_size: pageSize } }),
   get: (id: number) => api.get(`/datasets/${id}`),
-  update: (id: number, data: {
-    name?: string
-    description?: string
-    field_mapping?: any
-    review_config?: any
-    status?: string
-  }) => api.put(`/datasets/${id}`, data),
+  update: (
+    id: number,
+    data: {
+      name?: string
+      description?: string
+      field_mapping?: any
+      review_config?: any
+      status?: string
+    },
+  ) => api.put(`/datasets/${id}`, data),
   upload: (file: File, name: string, description?: string) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -82,8 +85,7 @@ export const datasetsApi = {
     if (description) formData.append('description', description)
     return api.post('/datasets/upload', formData)
   },
-  preview: (id: number, count = 5) =>
-    api.get(`/datasets/${id}/preview`, { params: { count } }),
+  preview: (id: number, count = 5) => api.get(`/datasets/${id}/preview`, { params: { count } }),
   detectFields: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -93,15 +95,17 @@ export const datasetsApi = {
 
 // Items API
 export const itemsApi = {
-  list: (datasetId: number, page = 1, pageSize = 20, statusFilter?: string) =>
+  list: (datasetId: number, page = 1, pageSize = 20, statusFilter?: string, isMarked?: boolean) =>
     api.get(`/items/dataset/${datasetId}`, {
-      params: { page, page_size: pageSize, status_filter: statusFilter },
+      params: { page, page_size: pageSize, status_filter: statusFilter, is_marked: isMarked },
     }),
   get: (id: number) => api.get(`/items/${id}`),
   getBySeq: (datasetId: number, seqNum: number) =>
     api.get(`/items/dataset/${datasetId}/seq/${seqNum}`),
-  update: (id: number, data: { current_content: any; status?: string; comment?: string }) =>
-    api.put(`/items/${id}`, data),
+  update: (
+    id: number,
+    data: { current_content: any; status?: string; comment?: string; is_marked?: boolean },
+  ) => api.put(`/items/${id}`, data),
   approve: (id: number) => api.post(`/items/${id}/approve`),
   reject: (id: number) => api.post(`/items/${id}/reject`),
 }
@@ -121,8 +125,12 @@ export const tasksApi = {
 
 // Share API
 export const shareApi = {
-  create: (data: { dataset_id: number; permission: string; expires_at?: string; max_access_count?: number }) =>
-    api.post('/share', data),
+  create: (data: {
+    dataset_id: number
+    permission: string
+    expires_at?: string
+    max_access_count?: number
+  }) => api.post('/share', data),
   list: (datasetId: number) => api.get(`/share/dataset/${datasetId}`),
   validate: (token: string) => api.get(`/share/${token}/validate`),
   access: (token: string) => api.post(`/share/${token}/access`),
@@ -131,7 +139,10 @@ export const shareApi = {
 
 // Export API
 export const exportApi = {
-  download: (datasetId: number, options: { format: string; status_filter?: string; include_original?: boolean }) =>
+  download: (
+    datasetId: number,
+    options: { format: string; status_filter?: string; include_original?: boolean },
+  ) =>
     api.get(`/export/${datasetId}`, {
       params: options,
       responseType: 'blob',
@@ -164,9 +175,10 @@ export const authCodeApi = {
   verify: (code: string) => publicApi.post(`/auth-codes/${code}/verify`),
   revoke: (id: number) => api.delete(`/auth-codes/${id}`),
   getReviewedItems: (code: string) => api.get(`/auth-codes/${code}/reviewed`),
-  leave: (sessionToken: string) => publicApi.post('/auth-codes/session/leave', null, {
-    params: { session_token: sessionToken },
-  }),
+  leave: (sessionToken: string) =>
+    publicApi.post('/auth-codes/session/leave', null, {
+      params: { session_token: sessionToken },
+    }),
   recordReview: (code: string, data: { item_id: number; action: string; session_token?: string }) =>
     publicApi.post(`/auth-codes/${code}/record-review`, null, {
       params: data,
@@ -175,6 +187,10 @@ export const authCodeApi = {
 
 // 公开Items API - 用于授权码访问
 export const publicItemsApi = {
+  get: (id: number, sessionToken?: string) =>
+    publicApi.get(`/items/${id}`, {
+      params: sessionToken ? { session_token: sessionToken } : {},
+    }),
   getBySeq: (datasetId: number, seqNum: number, sessionToken?: string) =>
     publicApi.get(`/items/dataset/${datasetId}/seq/${seqNum}`, {
       params: sessionToken ? { session_token: sessionToken } : {},

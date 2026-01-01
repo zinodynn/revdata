@@ -1,5 +1,22 @@
-import { CheckCircleOutlined, KeyOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Progress, Row, Space, Statistic, Table, Tag, Typography } from 'antd'
+import {
+  CheckCircleOutlined,
+  KeyOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
+import {
+  Button,
+  Card,
+  Col,
+  Empty,
+  Progress,
+  Row,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+} from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
@@ -68,7 +85,10 @@ export default function TasksPage() {
 
   // 进入纯净审核页面
   const startReview = (task: Task) => {
-    navigate(`/review/${task.dataset_id}?seq=${task.item_start}`)
+    // 如果是离散的任务(item_ids)，目前ReviewPageV2主要支持seq导航，
+    // 但我们可以传入seq=item_start作为入口，或者后续改进ReviewPageV2支持任务ID
+    // 暂时先跳转到起始序号
+    navigate(`/datasets/${task.dataset_id}/review?seq=${task.item_start}`)
   }
 
   // 打开授权码管理
@@ -182,7 +202,11 @@ export default function TasksPage() {
           <Card size="small">
             <Statistic
               title="审核进度"
-              value={stats.totalItems > 0 ? Math.round((stats.reviewedItems / stats.totalItems) * 100) : 0}
+              value={
+                stats.totalItems > 0
+                  ? Math.round((stats.reviewedItems / stats.totalItems) * 100)
+                  : 0
+              }
               suffix="%"
               valueStyle={{ color: '#722ed1' }}
             />
@@ -193,7 +217,9 @@ export default function TasksPage() {
       <Card
         title={
           <Space>
-            <Title level={5} style={{ margin: 0 }}>我的清单</Title>
+            <Title level={5} style={{ margin: 0 }}>
+              我的清单
+            </Title>
           </Space>
         }
         extra={

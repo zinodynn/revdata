@@ -9,6 +9,7 @@ interface DelegateModalProps {
   datasetId: number
   currentItemSeq: number
   totalItems: number
+  itemIds?: number[]
 }
 
 interface User {
@@ -24,6 +25,7 @@ export default function DelegateModal({
   datasetId,
   currentItemSeq,
   totalItems,
+  itemIds,
 }: DelegateModalProps) {
   const [form] = Form.useForm()
   const [users, setUsers] = useState<User[]>([])
@@ -33,12 +35,19 @@ export default function DelegateModal({
   useEffect(() => {
     if (open) {
       fetchUsers()
-      form.setFieldsValue({
-        item_start: currentItemSeq,
-        item_end: totalItems,
-      })
+      if (itemIds && itemIds.length > 0) {
+        form.setFieldsValue({
+          item_start: 0,
+          item_end: 0,
+        })
+      } else {
+        form.setFieldsValue({
+          item_start: currentItemSeq,
+          item_end: totalItems,
+        })
+      }
     }
-  }, [open, currentItemSeq, totalItems])
+  }, [open, currentItemSeq, totalItems, itemIds])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -60,6 +69,7 @@ export default function DelegateModal({
         assignee_id: values.assignee_id,
         item_start: values.item_start,
         item_end: values.item_end,
+        item_ids: itemIds,
         priority: values.priority || 0,
         note: values.note,
       })
@@ -75,7 +85,11 @@ export default function DelegateModal({
 
   return (
     <Modal
-      title={<><SendOutlined /> 委派任务</>}
+      title={
+        <>
+          <SendOutlined /> 委派任务
+        </>
+      }
       open={open}
       onCancel={onClose}
       footer={null}
@@ -141,12 +155,7 @@ export default function DelegateModal({
         </Form.Item>
 
         <Form.Item>
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={delegating}
-            icon={<SendOutlined />}
-          >
+          <Button type="primary" htmlType="submit" loading={delegating} icon={<SendOutlined />}>
             创建任务
           </Button>
         </Form.Item>

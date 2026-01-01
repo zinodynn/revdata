@@ -15,8 +15,13 @@
     // Python 格式化
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
         "editor.tabSize": 4
     },
+    "python.formatting.provider": "none", // Disable built-in formatting to use extensions
+    "isort.args": ["--profile", "black"],
     // markdown preview settings
     "[markdown]": {
         "editor.defaultFormatter": "vstirbu.vscode-mermaid-preview",

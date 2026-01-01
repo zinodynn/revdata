@@ -8,7 +8,7 @@ const defaultHotkeys = {
   approve: 'ctrl+enter',
   reject: 'ctrl+shift+enter',
   edit: 'ctrl+e',
-  save: 'ctrl+s',
+  save: 'alt+s',
   cancel: 'escape',
   focusQ: 'q',
   focusA: 'a',
@@ -55,8 +55,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-    }
-  )
+    },
+  ),
 )
 
 // 快捷键名称映射
