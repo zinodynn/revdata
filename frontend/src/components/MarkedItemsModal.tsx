@@ -88,7 +88,7 @@ export default function MarkedItemsModal({
       width: 120,
       render: (_: any, record: any) => {
         if (record.is_marked) {
-            return <Tag color="purple">标记待定</Tag>
+          return <Tag color="purple">标记待定</Tag>
         }
         const colors: Record<string, string> = {
           pending: 'default',
@@ -121,7 +121,12 @@ export default function MarkedItemsModal({
       onCancel={onClose}
       width={800}
       footer={[
-        <Button key="refresh" icon={<ReloadOutlined />} onClick={fetchMarkedItems} loading={loading}>
+        <Button
+          key="refresh"
+          icon={<ReloadOutlined />}
+          onClick={fetchMarkedItems}
+          loading={loading}
+        >
           刷新
         </Button>,
         <Button key="cancel" onClick={onClose}>

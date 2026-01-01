@@ -2,6 +2,10 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.auth_code import AuthCode, AuthCodeReviewedItem, AuthCodeSession
@@ -11,9 +15,6 @@ from app.schemas.auth_code import (
     AuthCodeResponse,
     AuthCodeVerifyResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/auth-codes", tags=["auth-codes"])
 

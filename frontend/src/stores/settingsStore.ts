@@ -55,8 +55,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-    }
-  )
+    },
+  ),
 )
 
 // 快捷键名称映射

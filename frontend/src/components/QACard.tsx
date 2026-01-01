@@ -25,7 +25,7 @@ interface QACardProps {
   onEditA?: () => void
   isEditing?: boolean
   theme?: 'light' | 'dark'
-  fieldMapping?: FieldMappingConfig  // 新增：字段映射配置
+  fieldMapping?: FieldMappingConfig // 新增：字段映射配置
 }
 
 /**
@@ -51,7 +51,9 @@ export default function QACard({
   const isDark = theme === 'dark'
 
   // 根据字段映射提取QA内容
-  const getQAContent = (content: any): { question: string; answer: string; thinking?: string; context?: string } => {
+  const getQAContent = (
+    content: any,
+  ): { question: string; answer: string; thinking?: string; context?: string } => {
     if (!content) return { question: '', answer: '' }
 
     // 如果有字段映射配置，优先使用
@@ -65,7 +67,9 @@ export default function QACard({
           return {
             question: q?.content || '',
             answer: a?.content || '',
-            thinking: fieldMapping.thinking_field ? content[fieldMapping.thinking_field] : undefined,
+            thinking: fieldMapping.thinking_field
+              ? content[fieldMapping.thinking_field]
+              : undefined,
             context: fieldMapping.context_field ? content[fieldMapping.context_field] : undefined,
           }
         }
@@ -73,10 +77,16 @@ export default function QACard({
 
       // 直接字段映射
       return {
-        question: fieldMapping.question_field ? String(content[fieldMapping.question_field] || '') : '',
+        question: fieldMapping.question_field
+          ? String(content[fieldMapping.question_field] || '')
+          : '',
         answer: fieldMapping.answer_field ? String(content[fieldMapping.answer_field] || '') : '',
-        thinking: fieldMapping.thinking_field ? String(content[fieldMapping.thinking_field] || '') : undefined,
-        context: fieldMapping.context_field ? String(content[fieldMapping.context_field] || '') : undefined,
+        thinking: fieldMapping.thinking_field
+          ? String(content[fieldMapping.thinking_field] || '')
+          : undefined,
+        context: fieldMapping.context_field
+          ? String(content[fieldMapping.context_field] || '')
+          : undefined,
       }
     }
 
@@ -154,7 +164,7 @@ export default function QACard({
         lineHeight: '1.6',
       },
     }),
-    []
+    [],
   )
 
   // 纯文本类型
@@ -174,8 +184,8 @@ export default function QACard({
       >
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
           <Text style={{ color: isDark ? '#b0b0b0' : '#666' }}>
-            这是第 <strong style={{ color: isDark ? '#fff' : '#000' }}>{seqNum}</strong> 条单栏文本数据。
-            包含一些需要审核的内容，可能需要修正语法、错别字或者格心问题。
+            这是第 <strong style={{ color: isDark ? '#fff' : '#000' }}>{seqNum}</strong>{' '}
+            条单栏文本数据。 包含一些需要审核的内容，可能需要修正语法、错别字或者格心问题。
           </Text>
           {!isEditing && onEditQ && (
             <Button type="primary" icon={<EditOutlined />} onClick={onEditQ}>
@@ -242,7 +252,11 @@ export default function QACard({
               label: (
                 <span style={{ color: isDark ? '#faad14' : '#d48806' }}>
                   <BulbOutlined /> 思考过程
-                  {thinkingHasChanges && <Tag color="gold" style={{ marginLeft: 8 }}>已修改</Tag>}
+                  {thinkingHasChanges && (
+                    <Tag color="gold" style={{ marginLeft: 8 }}>
+                      已修改
+                    </Tag>
+                  )}
                 </span>
               ),
               children: (
@@ -296,153 +310,153 @@ export default function QACard({
           gap: 24,
         }}
       >
-      {/* 左侧 - 用户/问题 */}
-      <div
-        className="qa-column qa-user"
-        style={{
-          flex: 1,
-          padding: 20,
-          borderRadius: 12,
-          background: isDark ? '#1e2838' : '#f0f5ff',
-          border: isDark ? '1px solid #3a4a5c' : '1px solid #adc6ff',
-        }}
-      >
+        {/* 左侧 - 用户/问题 */}
         <div
+          className="qa-column qa-user"
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
+            flex: 1,
+            padding: 20,
+            borderRadius: 12,
+            background: isDark ? '#1e2838' : '#f0f5ff',
+            border: isDark ? '1px solid #3a4a5c' : '1px solid #adc6ff',
           }}
         >
-          <div>
-            <Text strong style={{ fontSize: 16, color: isDark ? '#e8e8e8' : '#333' }}>
-              用户
-            </Text>
-            {qHasChanges && (
-              <Tag color="blue" style={{ marginLeft: 8 }}>
-                已修改
-              </Tag>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 16,
+            }}
+          >
+            <div>
+              <Text strong style={{ fontSize: 16, color: isDark ? '#e8e8e8' : '#333' }}>
+                用户
+              </Text>
+              {qHasChanges && (
+                <Tag color="blue" style={{ marginLeft: 8 }}>
+                  已修改
+                </Tag>
+              )}
+            </div>
+            {!isEditing && onEditQ && (
+              <Button size="small" type="primary" icon={<EditOutlined />} onClick={onEditQ}>
+                编辑 (q)
+              </Button>
             )}
           </div>
-          {!isEditing && onEditQ && (
-            <Button size="small" type="primary" icon={<EditOutlined />} onClick={onEditQ}>
-              编辑 (q)
-            </Button>
+
+          <Text
+            type="secondary"
+            style={{
+              display: 'block',
+              marginBottom: 12,
+              fontSize: 13,
+              color: isDark ? '#888' : '#666',
+            }}
+          >
+            用户问题 {seqNum}：
+          </Text>
+
+          {qHasChanges ? (
+            <div className="diff-content">
+              <ReactDiffViewer
+                oldValue={originalQA.question}
+                newValue={currentQA.question}
+                splitView={false}
+                compareMethod={DiffMethod.CHARS}
+                hideLineNumbers
+                styles={diffStyles}
+                useDarkTheme={isDark}
+              />
+            </div>
+          ) : (
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.8,
+                color: isDark ? '#e8e8e8' : '#333',
+                fontSize: 14,
+              }}
+            >
+              {currentQA.question}
+            </div>
           )}
         </div>
 
-        <Text
-          type="secondary"
+        {/* 右侧 - 助手/回答 */}
+        <div
+          className="qa-column qa-assistant"
           style={{
-            display: 'block',
-            marginBottom: 12,
-            fontSize: 13,
-            color: isDark ? '#888' : '#666',
+            flex: 1,
+            padding: 20,
+            borderRadius: 12,
+            background: isDark ? '#1e3828' : '#f6ffed',
+            border: isDark ? '1px solid #3a5c4a' : '1px solid #b7eb8f',
           }}
         >
-          用户问题 {seqNum}：
-        </Text>
-
-        {qHasChanges ? (
-          <div className="diff-content">
-            <ReactDiffViewer
-              oldValue={originalQA.question}
-              newValue={currentQA.question}
-              splitView={false}
-              compareMethod={DiffMethod.CHARS}
-              hideLineNumbers
-              styles={diffStyles}
-              useDarkTheme={isDark}
-            />
-          </div>
-        ) : (
           <div
             style={{
-              whiteSpace: 'pre-wrap',
-              lineHeight: 1.8,
-              color: isDark ? '#e8e8e8' : '#333',
-              fontSize: 14,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 16,
             }}
           >
-            {currentQA.question}
-          </div>
-        )}
-      </div>
-
-      {/* 右侧 - 助手/回答 */}
-      <div
-        className="qa-column qa-assistant"
-        style={{
-          flex: 1,
-          padding: 20,
-          borderRadius: 12,
-          background: isDark ? '#1e3828' : '#f6ffed',
-          border: isDark ? '1px solid #3a5c4a' : '1px solid #b7eb8f',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <Text strong style={{ fontSize: 16, color: isDark ? '#e8e8e8' : '#333' }}>
-              助手
-            </Text>
-            {aHasChanges && (
-              <Tag color="green" style={{ marginLeft: 8 }}>
-                已修改
-              </Tag>
+            <div>
+              <Text strong style={{ fontSize: 16, color: isDark ? '#e8e8e8' : '#333' }}>
+                助手
+              </Text>
+              {aHasChanges && (
+                <Tag color="green" style={{ marginLeft: 8 }}>
+                  已修改
+                </Tag>
+              )}
+            </div>
+            {!isEditing && onEditA && (
+              <Button size="small" type="primary" icon={<EditOutlined />} onClick={onEditA}>
+                编辑 (a)
+              </Button>
             )}
           </div>
-          {!isEditing && onEditA && (
-            <Button size="small" type="primary" icon={<EditOutlined />} onClick={onEditA}>
-              编辑 (a)
-            </Button>
-          )}
-        </div>
 
-        <Text
-          type="secondary"
-          style={{
-            display: 'block',
-            marginBottom: 12,
-            fontSize: 13,
-            color: isDark ? '#888' : '#666',
-          }}
-        >
-          助手回答 {seqNum}：
-        </Text>
-
-        {aHasChanges ? (
-          <div className="diff-content">
-            <ReactDiffViewer
-              oldValue={originalQA.answer}
-              newValue={currentQA.answer}
-              splitView={false}
-              compareMethod={DiffMethod.CHARS}
-              hideLineNumbers
-              styles={diffStyles}
-              useDarkTheme={isDark}
-            />
-          </div>
-        ) : (
-          <div
+          <Text
+            type="secondary"
             style={{
-              whiteSpace: 'pre-wrap',
-              lineHeight: 1.8,
-              color: isDark ? '#e8e8e8' : '#333',
-              fontSize: 14,
+              display: 'block',
+              marginBottom: 12,
+              fontSize: 13,
+              color: isDark ? '#888' : '#666',
             }}
           >
-            {currentQA.answer}
-          </div>
-        )}
-      </div>
+            助手回答 {seqNum}：
+          </Text>
+
+          {aHasChanges ? (
+            <div className="diff-content">
+              <ReactDiffViewer
+                oldValue={originalQA.answer}
+                newValue={currentQA.answer}
+                splitView={false}
+                compareMethod={DiffMethod.CHARS}
+                hideLineNumbers
+                styles={diffStyles}
+                useDarkTheme={isDark}
+              />
+            </div>
+          ) : (
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.8,
+                color: isDark ? '#e8e8e8' : '#333',
+                fontSize: 14,
+              }}
+            >
+              {currentQA.answer}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

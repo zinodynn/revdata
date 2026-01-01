@@ -144,9 +144,7 @@ export default function MembersPage() {
     {
       title: '角色',
       dataIndex: 'role',
-      render: (role: string) => (
-        <Tag color={roleColors[role]}>{roleLabels[role]}</Tag>
-      ),
+      render: (role: string) => <Tag color={roleColors[role]}>{roleLabels[role]}</Tag>,
     },
     {
       title: '状态',
@@ -180,10 +178,7 @@ export default function MembersPage() {
           >
             重置密码
           </Button>
-          <Popconfirm
-            title="确定删除该用户吗？"
-            onConfirm={() => handleDelete(record.id)}
-          >
+          <Popconfirm title="确定删除该用户吗？" onConfirm={() => handleDelete(record.id)}>
             <Button type="text" size="small" danger icon={<DeleteOutlined />}>
               删除
             </Button>

@@ -1,13 +1,14 @@
 import logging
 from typing import Optional
 
+from fastapi import Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.security import decode_token, oauth2_scheme, oauth2_scheme_optional
 from app.models.auth_code import AuthCode, AuthCodeSession
 from app.models.user import User, UserRole
-from fastapi import Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

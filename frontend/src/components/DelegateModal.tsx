@@ -85,7 +85,11 @@ export default function DelegateModal({
 
   return (
     <Modal
-      title={<><SendOutlined /> 委派任务</>}
+      title={
+        <>
+          <SendOutlined /> 委派任务
+        </>
+      }
       open={open}
       onCancel={onClose}
       footer={null}
@@ -151,12 +155,7 @@ export default function DelegateModal({
         </Form.Item>
 
         <Form.Item>
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={delegating}
-            icon={<SendOutlined />}
-          >
+          <Button type="primary" htmlType="submit" loading={delegating} icon={<SendOutlined />}>
             创建任务
           </Button>
         </Form.Item>

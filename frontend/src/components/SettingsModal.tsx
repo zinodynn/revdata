@@ -11,13 +11,7 @@ interface SettingsModalProps {
 }
 
 // 快捷键输入组件
-function HotkeyInput({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (key: string) => void
-}) {
+function HotkeyInput({ value, onChange }: { value: string; onChange: (key: string) => void }) {
   const [isRecording, setIsRecording] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 

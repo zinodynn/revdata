@@ -1,4 +1,13 @@
-import { ExportOutlined, EyeOutlined, KeyOutlined, MoreOutlined, PlusOutlined, SendOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons'
+import {
+  ExportOutlined,
+  EyeOutlined,
+  KeyOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  SendOutlined,
+  SettingOutlined,
+  UploadOutlined,
+} from '@ant-design/icons'
 import {
   Button,
   Card,
@@ -269,7 +278,7 @@ export default function DatasetsPage() {
         onClose={() => setDelegateModalOpen(false)}
         datasetId={selectedDatasetId || 0}
         currentItemSeq={1}
-        totalItems={datasets.find(d => d.id === selectedDatasetId)?.item_count || 0}
+        totalItems={datasets.find((d) => d.id === selectedDatasetId)?.item_count || 0}
       />
 
       <Modal
@@ -283,11 +292,7 @@ export default function DatasetsPage() {
         <Steps
           current={currentStep}
           style={{ marginBottom: 24 }}
-          items={[
-            { title: '选择文件' },
-            { title: '配置字段映射' },
-            { title: '确认上传' },
-          ]}
+          items={[{ title: '选择文件' }, { title: '配置字段映射' }, { title: '确认上传' }]}
         />
 
         {currentStep === 0 && (
@@ -363,9 +368,7 @@ export default function DatasetsPage() {
                 {fieldMapping?.thinking_field && (
                   <Tag color="gold">思考: {fieldMapping.thinking_field}</Tag>
                 )}
-                {fieldMapping?.display_mode && (
-                  <Tag>模式: {fieldMapping.display_mode}</Tag>
-                )}
+                {fieldMapping?.display_mode && <Tag>模式: {fieldMapping.display_mode}</Tag>}
               </Space>
             </Card>
             <Form.Item>

@@ -1,11 +1,12 @@
 import enum
 from datetime import datetime
 
-from app.core.database import Base
 from sqlalchemy import Boolean, Column, DateTime
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import relationship
+
+from app.core.database import Base
 
 
 class UserRole(str, enum.Enum):

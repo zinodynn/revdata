@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
 
-from app.models.task import TaskStatus
 from pydantic import BaseModel
+
+from app.models.task import TaskStatus
 
 
 class TaskCreate(BaseModel):

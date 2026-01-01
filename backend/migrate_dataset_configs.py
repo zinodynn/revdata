@@ -11,8 +11,9 @@ from pathlib import Path
 backend_dir = Path(__file__).parent
 sys.path.insert(0, str(backend_dir))
 
-from app.core.database import engine
 from sqlalchemy import text
+
+from app.core.database import engine
 
 
 async def migrate():
@@ -25,7 +26,7 @@ async def migrate():
         await conn.execute(
             text(
                 """
-            ALTER TABLE datasets 
+            ALTER TABLE datasets
             ADD COLUMN IF NOT EXISTS field_mapping JSONB DEFAULT NULL
         """
             )
@@ -36,7 +37,7 @@ async def migrate():
         await conn.execute(
             text(
                 """
-            ALTER TABLE datasets 
+            ALTER TABLE datasets
             ADD COLUMN IF NOT EXISTS review_config JSONB DEFAULT NULL
         """
             )
@@ -67,7 +68,7 @@ async def migrate():
                 """
             SELECT column_name, data_type, is_nullable
             FROM information_schema.columns
-            WHERE table_name = 'datasets' 
+            WHERE table_name = 'datasets'
               AND column_name IN ('field_mapping', 'review_config')
             ORDER BY column_name
         """

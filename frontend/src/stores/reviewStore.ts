@@ -18,7 +18,7 @@ interface ReviewState {
   items: DataItem[]
   isEditing: boolean
   editingContent: any
-  
+
   setCurrentItem: (item: DataItem) => void
   setItems: (items: DataItem[], total: number) => void
   setCurrentIndex: (index: number) => void
@@ -34,7 +34,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   items: [],
   isEditing: false,
   editingContent: null,
-  
+
   setCurrentItem: (item) => set({ currentItem: item, editingContent: item.current_content }),
   setItems: (items, total) => set({ items, totalItems: total }),
   setCurrentIndex: (index) => set({ currentIndex: index }),

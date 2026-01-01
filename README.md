@@ -2,7 +2,7 @@
 
 ## 架构预览
 
-```mermaid 
+```mermaid
 flowchart TB
     %% 定义泳道
     subgraph SUPERADMIN["超级管理员"]
@@ -43,12 +43,12 @@ flowchart TB
 
     subgraph SYSTEM["系统核心"]
         direction TB
-        S1[(原始数据池)] 
+        S1[(原始数据池)]
         S2[(审核任务数据包或队列)]
         S3[(授权码管理)]
         S4[(审核数据库)]
         S5[(导出文件库)]
-        
+
         S1 -.->|指派分配| S2
         S2 -->|任务分发| R1
         S3 -->|验证| AS2
@@ -72,7 +72,7 @@ flowchart TB
     SA2 -->|管理| REVIEWER
     SA2 -->|管理| ASSIGNEE
     SA4 -->|查看| SYSTEM
-    
+
     A1 -->|写入| S1
     A3 -->|设置规则| CR1
     A3 -->|设置规则| CR2
@@ -93,7 +93,7 @@ flowchart TB
     classDef assignee fill:#fff7e6,stroke:#fa8c16,stroke-width:2px;
     classDef system fill:#f9f0ff,stroke:#722ed1,stroke-width:2px;
     classDef data fill:#fff2e8,stroke:#ff7a45,stroke-width:1px,stroke-dasharray:5 5;
-    
+
     class SUPERADMIN superadmin;
     class ADMIN admin;
     class REVIEWER reviewer;
@@ -101,7 +101,7 @@ flowchart TB
     class SYSTEM system;
     class CONFIGURATION data;
     class S1,S2,S3,S4,S5 data;
-    
+
     %% 重要连接线样式
     linkStyle 10 stroke:#fa541c,stroke-width:2px;
     linkStyle 11 stroke:#fa541c,stroke-width:2px,stroke-dasharray:3;

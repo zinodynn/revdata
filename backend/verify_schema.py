@@ -9,8 +9,9 @@ from pathlib import Path
 backend_dir = Path(__file__).parent
 sys.path.insert(0, str(backend_dir))
 
-from app.core.database import engine
 from sqlalchemy import text
+
+from app.core.database import engine
 
 
 async def verify_schema():
@@ -23,9 +24,9 @@ async def verify_schema():
         result = await conn.execute(
             text(
                 """
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'users' 
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'users'
             ORDER BY ordinal_position
         """
             )
@@ -40,9 +41,9 @@ async def verify_schema():
         result = await conn.execute(
             text(
                 """
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'datasets' 
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'datasets'
             ORDER BY ordinal_position
         """
             )

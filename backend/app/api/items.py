@@ -2,6 +2,10 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import (
     get_auth_code_from_session,
     get_current_user,
@@ -15,9 +19,6 @@ from app.models.revision import Revision
 from app.models.user import User
 from app.schemas.data_item import DataItemListResponse, DataItemResponse, DataItemUpdate
 from app.utils import normalize_json_keys
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

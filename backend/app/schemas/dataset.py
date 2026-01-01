@@ -2,8 +2,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
 
-from app.models.dataset import DatasetFormat, DatasetStatus
 from pydantic import BaseModel
+
+from app.models.dataset import DatasetFormat, DatasetStatus
 
 
 class DisplayMode(str, Enum):

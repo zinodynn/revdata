@@ -1,24 +1,24 @@
 import {
-    BulbOutlined,
-    EyeOutlined,
-    FileTextOutlined,
-    MessageOutlined,
-    QuestionCircleOutlined,
-    SettingOutlined,
+  BulbOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  MessageOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import {
-    Button,
-    Card,
-    Divider,
-    Form,
-    Radio,
-    Select,
-    Space,
-    Switch,
-    Table,
-    Tag,
-    Tooltip,
-    Typography,
+  Button,
+  Card,
+  Divider,
+  Form,
+  Radio,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
 } from 'antd'
 import { useEffect, useState } from 'react'
 
@@ -110,11 +110,15 @@ export default function FieldMappingConfig({
   // 获取未被使用的字段
   const getAvailableFields = (excludeKey?: keyof FieldMapping) => {
     const usedFields = new Set<string>()
-    if (mapping.question_field && excludeKey !== 'question_field') usedFields.add(mapping.question_field)
+    if (mapping.question_field && excludeKey !== 'question_field')
+      usedFields.add(mapping.question_field)
     if (mapping.answer_field && excludeKey !== 'answer_field') usedFields.add(mapping.answer_field)
-    if (mapping.thinking_field && excludeKey !== 'thinking_field') usedFields.add(mapping.thinking_field)
-    if (mapping.context_field && excludeKey !== 'context_field') usedFields.add(mapping.context_field)
-    if (mapping.messages_field && excludeKey !== 'messages_field') usedFields.add(mapping.messages_field)
+    if (mapping.thinking_field && excludeKey !== 'thinking_field')
+      usedFields.add(mapping.thinking_field)
+    if (mapping.context_field && excludeKey !== 'context_field')
+      usedFields.add(mapping.context_field)
+    if (mapping.messages_field && excludeKey !== 'messages_field')
+      usedFields.add(mapping.messages_field)
     return detectedFields.filter((f) => !usedFields.has(f))
   }
 
@@ -190,14 +194,14 @@ export default function FieldMappingConfig({
                 field === mapping.question_field
                   ? 'blue'
                   : field === mapping.answer_field
-                  ? 'green'
-                  : field === mapping.thinking_field
-                  ? 'gold'
-                  : field === mapping.context_field
-                  ? 'purple'
-                  : field === mapping.messages_field
-                  ? 'cyan'
-                  : 'default'
+                    ? 'green'
+                    : field === mapping.thinking_field
+                      ? 'gold'
+                      : field === mapping.context_field
+                        ? 'purple'
+                        : field === mapping.messages_field
+                          ? 'cyan'
+                          : 'default'
               }
             >
               {field}

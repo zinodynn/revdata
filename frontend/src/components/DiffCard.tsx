@@ -35,7 +35,7 @@ export default function DiffCard({
   // 提取QA内容
   const getQAContent = (content: any): { question: string; answer: string } => {
     if (!content) return { question: '', answer: '' }
-    
+
     if (content.messages && Array.isArray(content.messages)) {
       const q = content.messages.find((m: any) => m.role === 'user' || m.role === 'human')
       const a = content.messages.find((m: any) => m.role === 'assistant' || m.role === 'ai')
@@ -44,7 +44,7 @@ export default function DiffCard({
         answer: a?.content || '',
       }
     }
-    
+
     return {
       question: content.question || content.instruction || content.prompt || content.input || '',
       answer: content.answer || content.output || content.completion || content.response || '',
@@ -79,14 +79,14 @@ export default function DiffCard({
         fontFamily: 'inherit',
       },
     }),
-    []
+    [],
   )
 
   // QA类型展示
   if (itemType === 'qa') {
     const originalQA = getQAContent(originalContent)
     const currentQA = getQAContent(currentContent)
-    
+
     const qHasChanges = originalQA.question !== currentQA.question
     const aHasChanges = originalQA.answer !== currentQA.answer
 

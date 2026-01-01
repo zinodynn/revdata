@@ -131,9 +131,7 @@ export default function LayoutV2() {
               borderBottom: isDark ? '1px solid #434343' : '1px solid #f0f0f0',
             }}
           >
-            {!siderCollapsed && (
-              <h2 style={{ margin: 0, color: '#1890ff' }}>📊 RevData</h2>
-            )}
+            {!siderCollapsed && <h2 style={{ margin: 0, color: '#1890ff' }}>📊 RevData</h2>}
             {siderCollapsed && <span style={{ fontSize: 24 }}>📊</span>}
           </div>
           <Menu
@@ -164,7 +162,13 @@ export default function LayoutV2() {
                 onClick={() => setSiderCollapsed(!siderCollapsed)}
               />
               {!isAdmin && (
-                <span style={{ fontSize: 16, fontWeight: 500, color: isDark ? '#e8e8e8' : '#333' }}>
+                <span
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 500,
+                    color: isDark ? '#e8e8e8' : '#333',
+                  }}
+                >
                   审核清单
                 </span>
               )}
@@ -200,7 +204,17 @@ export default function LayoutV2() {
                   />
                   <span style={{ color: isDark ? '#e8e8e8' : undefined }}>
                     {user?.username}
-                    {isAdmin && <span style={{ marginLeft: 4, fontSize: 11, color: '#52c41a' }}>(管理员)</span>}
+                    {isAdmin && (
+                      <span
+                        style={{
+                          marginLeft: 4,
+                          fontSize: 11,
+                          color: '#52c41a',
+                        }}
+                      >
+                        (管理员)
+                      </span>
+                    )}
                   </span>
                 </Button>
               </Dropdown>

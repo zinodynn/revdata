@@ -1,10 +1,11 @@
 import random
 import string
 
-from app.core.database import Base
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
+from app.core.database import Base
 
 
 class AuthCode(Base):

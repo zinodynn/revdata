@@ -1,5 +1,22 @@
-import { CheckCircleOutlined, KeyOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Progress, Row, Space, Statistic, Table, Tag, Typography } from 'antd'
+import {
+  CheckCircleOutlined,
+  KeyOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
+import {
+  Button,
+  Card,
+  Col,
+  Empty,
+  Progress,
+  Row,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+} from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
@@ -185,7 +202,11 @@ export default function TasksPage() {
           <Card size="small">
             <Statistic
               title="审核进度"
-              value={stats.totalItems > 0 ? Math.round((stats.reviewedItems / stats.totalItems) * 100) : 0}
+              value={
+                stats.totalItems > 0
+                  ? Math.round((stats.reviewedItems / stats.totalItems) * 100)
+                  : 0
+              }
               suffix="%"
               valueStyle={{ color: '#722ed1' }}
             />
@@ -196,7 +217,9 @@ export default function TasksPage() {
       <Card
         title={
           <Space>
-            <Title level={5} style={{ margin: 0 }}>我的清单</Title>
+            <Title level={5} style={{ margin: 0 }}>
+              我的清单
+            </Title>
           </Space>
         }
         extra={

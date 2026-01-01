@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from app.models.share_link import SharePermission
 from pydantic import BaseModel
+
+from app.models.share_link import SharePermission
 
 
 class ShareLinkCreate(BaseModel):
