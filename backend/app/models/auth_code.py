@@ -1,9 +1,17 @@
 import random
 import string
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 from app.core.database import Base
 
@@ -43,7 +51,9 @@ class AuthCode(Base):
     creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # 时间戳
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
 
     # 关系
     dataset = relationship("Dataset", back_populates="auth_codes")
@@ -74,8 +84,12 @@ class AuthCodeSession(Base):
     is_left = Column(Boolean, default=False)  # 是否已离开
 
     # 时间
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_active_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    last_active_at = Column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     # 关系
@@ -97,7 +111,9 @@ class AuthCodeReviewedItem(Base):
     new_content = Column(String, nullable=True)
 
     # 时间
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
 
     # 关系
     auth_code = relationship("AuthCode", back_populates="reviewed_items")
