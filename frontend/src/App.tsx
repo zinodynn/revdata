@@ -37,6 +37,21 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// 审核员及以上路由保护
+function ReviewerRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useAuthStore()
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (user?.role !== 'admin' && user?.role !== 'super_admin' && user?.role !== 'reviewer') {
+    return <Navigate to="/tasks" replace />
+  }
+
+  return <>{children}</>
+}
+
 function App() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
@@ -61,23 +76,25 @@ function App() {
         {/* 根据角色重定向 */}
         <Route index element={<Navigate to={isAdmin ? '/datasets' : '/tasks'} replace />} />
 
-        {/* 管理员路由 */}
+        {/* 审核员及以上路由 */}
         <Route
           path="datasets"
           element={
-            <AdminRoute>
+            <ReviewerRoute>
               <DatasetsPage />
-            </AdminRoute>
+            </ReviewerRoute>
           }
         />
         <Route
           path="datasets/:id"
           element={
-            <AdminRoute>
+            <ReviewerRoute>
               <DatasetDetailPage />
-            </AdminRoute>
+            </ReviewerRoute>
           }
         />
+
+        {/* 管理员路由 */}
         <Route
           path="members"
           element={

@@ -76,8 +76,14 @@ export const datasetsApi = {
       field_mapping?: any
       review_config?: any
       status?: string
+      owner_id?: number
     },
   ) => api.put(`/datasets/${id}`, data),
+  transferAll: (fromUserId: number, toUserId: number) =>
+    api.post('/datasets/transfer-all', null, {
+      params: { from_user_id: fromUserId, to_user_id: toUserId },
+    }),
+  delete: (id: number) => api.delete(`/datasets/${id}`),
   upload: (file: File, name: string, description?: string) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -155,8 +161,10 @@ export const usersApi = {
   get: (id: number) => api.get(`/users/${id}`),
   create: (data: { username: string; email: string; password: string; role: string }) =>
     api.post('/users', data),
-  update: (id: number, data: { username?: string; email?: string; role?: string }) =>
-    api.put(`/users/${id}`, data),
+  update: (
+    id: number,
+    data: { username?: string; email?: string; role?: string; is_active?: boolean },
+  ) => api.put(`/users/${id}`, data),
   delete: (id: number) => api.delete(`/users/${id}`),
   resetPassword: (id: number) => api.post(`/users/${id}/reset-password`),
 }

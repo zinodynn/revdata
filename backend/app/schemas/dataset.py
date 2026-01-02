@@ -51,6 +51,7 @@ class DatasetUpdate(BaseModel):
     field_mapping: Optional[FieldMapping] = None
     review_config: Optional[ReviewConfig] = None
     status: Optional[DatasetStatus] = None
+    owner_id: Optional[int] = None
 
 
 class DatasetResponse(BaseModel):

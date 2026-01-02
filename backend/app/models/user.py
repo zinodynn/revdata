@@ -33,17 +33,13 @@ class User(Base):
         "Dataset",
         back_populates="owner",
         foreign_keys="Dataset.owner_id",
-        cascade="all, delete-orphan",
     )
     assigned_items = relationship(
         "DataItem",
         back_populates="assignee",
         foreign_keys="DataItem.assigned_to",
-        cascade="all, delete-orphan",
     )
-    revisions = relationship(
-        "Revision", back_populates="user", cascade="all, delete-orphan"
-    )
+    revisions = relationship("Revision", back_populates="user")
     assigned_tasks = relationship(
         "Task",
         back_populates="assignee",

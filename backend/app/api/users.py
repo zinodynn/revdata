@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.core.security import get_password_hash
+from app.models.dataset import Dataset
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
@@ -20,13 +21,6 @@ ROLE_HIERARCHY = {
     UserRole.REVIEWER: 2,
     UserRole.VIEWER: 1,
 }
-
-
-def require_admin(current_user: User = Depends(get_current_user)):
-    """要求管理员权限"""
-    if current_user.role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return current_user
 
 
 @router.get("", response_model=List[UserResponse])
@@ -123,6 +117,9 @@ async def update_user(
                     )
         user.role = data.role
 
+    if data.is_active is not None:
+        user.is_active = data.is_active
+
     await db.commit()
     await db.refresh(user)
     return user
@@ -134,23 +131,30 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """删除用户"""
+    """禁用用户"""
     if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="不能删除自己")
+        raise HTTPException(status_code=400, detail="不能禁用自己")
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 检查角色权限：普通管理员不能删除同级或更高权限的用户
+    # 检查角色权限：普通管理员不能禁用同级或更高权限的用户
     if current_user.role != UserRole.SUPER_ADMIN:
         if ROLE_HIERARCHY.get(user.role, 0) >= ROLE_HIERARCHY.get(current_user.role, 0):
-            raise HTTPException(status_code=403, detail="无权删除同级或更高权限的用户")
+            raise HTTPException(status_code=403, detail="无权禁用同级或更高权限的用户")
 
-    await db.delete(user)
+    # 检查是否拥有数据集，如果有则不允许禁用，必须先转移所有权
+    dataset_check = await db.execute(select(Dataset).where(Dataset.owner_id == user_id))
+    if dataset_check.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400, detail="该用户拥有数据集，请先转移数据集所有权后再禁用"
+        )
+
+    user.is_active = False
     await db.commit()
-    return {"message": "用户已删除"}
+    return {"message": "用户已禁用"}
 
 
 @router.post("/{user_id}/reset-password")

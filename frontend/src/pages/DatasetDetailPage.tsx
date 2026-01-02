@@ -14,7 +14,9 @@ import {
   Col,
   Descriptions,
   message,
+  Modal,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -25,7 +27,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
-import { datasetsApi, exportApi } from '../services/api'
+import { datasetsApi, exportApi, usersApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 
 const { Title } = Typography
@@ -76,10 +78,13 @@ export default function DatasetDetailPage() {
   const { user } = useAuthStore()
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
+  const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [_saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+  const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [newOwnerId, setNewOwnerId] = useState<number | null>(null)
 
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
 
@@ -87,8 +92,18 @@ export default function DatasetDetailPage() {
     if (id) {
       fetchDataset()
       fetchPreview()
+      if (isAdmin) fetchUsers()
     }
   }, [id])
+
+  const fetchUsers = async () => {
+    try {
+      const res = await usersApi.list()
+      setUsers(res.data)
+    } catch (error) {
+      console.error('获取用户列表失败', error)
+    }
+  }
 
   const fetchDataset = async () => {
     try {
@@ -148,6 +163,24 @@ export default function DatasetDetailPage() {
     } finally {
       setExporting(false)
     }
+  }
+
+  const handleTransfer = async () => {
+    if (!dataset || !newOwnerId) return
+    try {
+      await datasetsApi.update(dataset.id, { owner_id: newOwnerId })
+      message.success('所有权转移成功')
+      setTransferModalOpen(false)
+      setNewOwnerId(null)
+      fetchDataset()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '转移失败')
+    }
+  }
+
+  const getOwnerName = (ownerId: number) => {
+    const owner = users.find((u) => u.id === ownerId)
+    return owner ? owner.username : `ID: ${ownerId}`
   }
 
   if (loading) {
@@ -217,6 +250,16 @@ export default function DatasetDetailPage() {
             <Descriptions column={2}>
               <Descriptions.Item label="名称">{dataset.name}</Descriptions.Item>
               <Descriptions.Item label="ID">{dataset.id}</Descriptions.Item>
+              <Descriptions.Item label="所有者">
+                <Space>
+                  {getOwnerName(dataset.owner_id)}
+                  {isAdmin && (
+                    <Button type="link" size="small" onClick={() => setTransferModalOpen(true)}>
+                      转移
+                    </Button>
+                  )}
+                </Space>
+              </Descriptions.Item>
               <Descriptions.Item label="源文件">{dataset.source_file}</Descriptions.Item>
               <Descriptions.Item label="格式">{dataset.format}</Descriptions.Item>
               <Descriptions.Item label="描述" span={2}>
@@ -328,6 +371,42 @@ export default function DatasetDetailPage() {
       >
         <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
       </Card>
+
+      <Modal
+        title="转移数据集所有权"
+        open={transferModalOpen}
+        onCancel={() => {
+          setTransferModalOpen(false)
+          setNewOwnerId(null)
+        }}
+        onOk={handleTransfer}
+        okButtonProps={{ disabled: !newOwnerId }}
+        okText="确定转移"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Text>请选择新的数据集所有者：</Typography.Text>
+        </div>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="选择用户"
+          onChange={(value) => setNewOwnerId(value)}
+          value={newOwnerId}
+        >
+          {users
+            .filter(
+              (u) =>
+                u.id !== dataset?.owner_id &&
+                u.is_active &&
+                (u.role === 'admin' || u.role === 'super_admin'),
+            )
+            .map((u) => (
+              <Select.Option key={u.id} value={u.id}>
+                {u.username} ({u.role})
+              </Select.Option>
+            ))}
+        </Select>
+      </Modal>
     </div>
   )
 }

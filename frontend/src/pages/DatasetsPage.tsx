@@ -1,4 +1,5 @@
 import {
+  DeleteOutlined,
   ExportOutlined,
   EyeOutlined,
   KeyOutlined,
@@ -30,6 +31,7 @@ import AuthCodeModal from '../components/AuthCodeModal'
 import DelegateModal from '../components/DelegateModal'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import { datasetsApi } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
 
 const { Title } = Typography
 
@@ -60,6 +62,8 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function DatasetsPage() {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [loading, setLoading] = useState(false)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -153,6 +157,16 @@ export default function DatasetsPage() {
     form.resetFields()
   }
 
+  const handleDelete = async (id: number) => {
+    try {
+      await datasetsApi.delete(id)
+      message.success('数据集已删除')
+      fetchDatasets()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '删除失败')
+    }
+  }
+
   const columns = [
     {
       title: 'ID',
@@ -201,46 +215,69 @@ export default function DatasetsPage() {
           >
             预览
           </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<SendOutlined />}
-            onClick={() => {
-              setSelectedDatasetId(record.id)
-              setDelegateModalOpen(true)
-            }}
-          >
-            委派
-          </Button>
-          <Dropdown
-            menu={{
-              items: [
-                {
-                  key: 'auth_code',
-                  icon: <KeyOutlined />,
-                  label: '生成授权码',
-                  onClick: () => {
-                    setSelectedDatasetId(record.id)
-                    setAuthCodeModalOpen(true)
-                  },
-                },
-                {
-                  key: 'detail',
-                  icon: <SettingOutlined />,
-                  label: '配置',
-                  onClick: () => navigate(`/datasets/${record.id}`),
-                },
-                {
-                  key: 'export',
-                  icon: <ExportOutlined />,
-                  label: '导出',
-                  onClick: () => navigate(`/datasets/${record.id}`),
-                },
-              ],
-            }}
-          >
-            <Button type="text" icon={<MoreOutlined />} />
-          </Dropdown>
+          {isAdmin && (
+            <>
+              <Button
+                type="link"
+                size="small"
+                icon={<SendOutlined />}
+                onClick={() => {
+                  setSelectedDatasetId(record.id)
+                  setDelegateModalOpen(true)
+                }}
+              >
+                委派
+              </Button>
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'auth_code',
+                      icon: <KeyOutlined />,
+                      label: '生成授权码',
+                      onClick: () => {
+                        setSelectedDatasetId(record.id)
+                        setAuthCodeModalOpen(true)
+                      },
+                    },
+                    {
+                      key: 'detail',
+                      icon: <SettingOutlined />,
+                      label: '配置',
+                      onClick: () => navigate(`/datasets/${record.id}`),
+                    },
+                    {
+                      key: 'export',
+                      icon: <ExportOutlined />,
+                      label: '导出',
+                      onClick: () => navigate(`/datasets/${record.id}`),
+                    },
+                    {
+                      type: 'divider',
+                    },
+                    {
+                      key: 'delete',
+                      icon: <DeleteOutlined />,
+                      label: '删除',
+                      danger: true,
+                      onClick: () => {
+                        Modal.confirm({
+                          title: '确定要删除该数据集吗？',
+                          content: '删除后将无法恢复，且会同时删除所有相关的任务和授权码。',
+                          okText: '确定',
+                          okType: 'danger',
+                          cancelText: '取消',
+                          onOk: () => handleDelete(record.id),
+                        })
+                      },
+                    },
+                  ],
+                }}
+              >
+                <Button type="text" icon={<MoreOutlined />} />
+              </Dropdown>
+            </>
+          )}
         </Space>
       ),
     },
@@ -252,9 +289,11 @@ export default function DatasetsPage() {
         <Title level={4} style={{ margin: 0 }}>
           数据集列表
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
-          上传数据集
-        </Button>
+        {isAdmin && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
+            上传数据集
+          </Button>
+        )}
       </div>
 
       <Card>
