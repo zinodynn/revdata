@@ -1,8 +1,9 @@
 import {
-  DeleteOutlined,
+  CheckCircleOutlined,
   EditOutlined,
   KeyOutlined,
   ReloadOutlined,
+  StopOutlined,
   UserAddOutlined,
 } from '@ant-design/icons'
 import {
@@ -21,8 +22,8 @@ import {
   message,
 } from 'antd'
 import { useEffect, useState } from 'react'
-import { usersApi } from '../services/api'
-
+import { datasetsApi, usersApi } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
 const { Title, Text } = Typography
 
 interface User {
@@ -37,21 +38,44 @@ interface User {
 const roleColors: Record<string, string> = {
   super_admin: 'red',
   admin: 'orange',
+  reviewer: 'green',
   viewer: 'blue',
 }
 
 const roleLabels: Record<string, string> = {
   super_admin: '超级管理员',
   admin: '管理员',
-  viewer: '审核员',
+  reviewer: '审核员',
+  viewer: '查看者',
 }
 
 export default function MembersPage() {
+  const { user: currentUser } = useAuthStore()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [userToDisable, setUserToDisable] = useState<User | null>(null)
+  const [newOwnerId, setNewOwnerId] = useState<number | null>(null)
   const [form] = Form.useForm()
+
+  const roleHierarchy: Record<string, number> = {
+    super_admin: 4,
+    admin: 3,
+    reviewer: 2,
+    viewer: 1,
+  }
+
+  const canManage = (targetUser: User) => {
+    if (currentUser?.role === 'super_admin') return true
+    return (roleHierarchy[currentUser?.role || ''] || 0) > (roleHierarchy[targetUser.role] || 0)
+  }
+
+  const canEdit = (targetUser: User) => {
+    if (currentUser?.id === targetUser.id) return true
+    return canManage(targetUser)
+  }
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -101,13 +125,38 @@ export default function MembersPage() {
     }
   }
 
-  const handleDelete = async (id: number) => {
+  const handleToggleStatus = async (user: User) => {
     try {
-      await usersApi.delete(id)
-      message.success('删除成功')
+      if (user.is_active) {
+        await usersApi.delete(user.id)
+        message.success('已禁用用户')
+      } else {
+        await usersApi.update(user.id, { is_active: true })
+        message.success('已启用用户')
+      }
       fetchUsers()
-    } catch (error) {
-      message.error('删除失败')
+    } catch (error: any) {
+      if (error.response?.data?.detail?.includes('拥有数据集')) {
+        setUserToDisable(user)
+        setTransferModalOpen(true)
+      } else {
+        message.error(error.response?.data?.detail || '操作失败')
+      }
+    }
+  }
+
+  const handleTransferAndDisable = async () => {
+    if (!userToDisable || !newOwnerId) return
+    try {
+      await datasetsApi.transferAll(userToDisable.id, newOwnerId)
+      await usersApi.delete(userToDisable.id)
+      message.success('已转移数据集并禁用用户')
+      setTransferModalOpen(false)
+      setUserToDisable(null)
+      setNewOwnerId(null)
+      fetchUsers()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '操作失败')
     }
   }
 
@@ -150,7 +199,7 @@ export default function MembersPage() {
       title: '状态',
       dataIndex: 'is_active',
       render: (active: boolean) =>
-        active ? <Tag color="green">正常</Tag> : <Tag color="red">禁用</Tag>,
+        active ? <Tag color="blue">正常</Tag> : <Tag color="red">禁用</Tag>,
     },
     {
       title: '创建时间',
@@ -167,6 +216,7 @@ export default function MembersPage() {
             size="small"
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
+            disabled={!canEdit(record)}
           >
             编辑
           </Button>
@@ -175,12 +225,24 @@ export default function MembersPage() {
             size="small"
             icon={<KeyOutlined />}
             onClick={() => handleResetPassword(record.id)}
+            disabled={!canEdit(record)}
           >
             重置密码
           </Button>
-          <Popconfirm title="确定删除该用户吗？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="text" size="small" danger icon={<DeleteOutlined />}>
-              删除
+          <Popconfirm
+            title={`确定${record.is_active ? '禁用' : '启用'}该用户吗？`}
+            onConfirm={() => handleToggleStatus(record)}
+            disabled={!canManage(record) || currentUser?.id === record.id}
+          >
+            <Button
+              type="text"
+              size="small"
+              danger={record.is_active}
+              style={!record.is_active ? { color: '#52c41a' } : {}}
+              icon={record.is_active ? <StopOutlined /> : <CheckCircleOutlined />}
+              disabled={!canManage(record) || currentUser?.id === record.id}
+            >
+              {record.is_active ? '禁用' : '启用'}
             </Button>
           </Popconfirm>
         </Space>
@@ -262,11 +324,15 @@ export default function MembersPage() {
             name="role"
             label="角色"
             rules={[{ required: true, message: '请选择角色' }]}
-            initialValue="viewer"
+            initialValue="reviewer"
           >
             <Select>
-              <Select.Option value="viewer">审核员</Select.Option>
+              <Select.Option value="viewer">查看者</Select.Option>
+              <Select.Option value="reviewer">审核员</Select.Option>
               <Select.Option value="admin">管理员</Select.Option>
+              {currentUser?.role === 'super_admin' && (
+                <Select.Option value="super_admin">超级管理员</Select.Option>
+              )}
             </Select>
           </Form.Item>
 
@@ -277,6 +343,50 @@ export default function MembersPage() {
               </Button>
               <Button onClick={() => setModalOpen(false)}>取消</Button>
             </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 转移数据集所有权弹窗 */}
+      <Modal
+        title="转移数据集所有权"
+        open={transferModalOpen}
+        onCancel={() => {
+          setTransferModalOpen(false)
+          setUserToDisable(null)
+          setNewOwnerId(null)
+        }}
+        onOk={handleTransferAndDisable}
+        okButtonProps={{ disabled: !newOwnerId }}
+        okText="转移并禁用"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text>
+            用户 <b>{userToDisable?.username}</b>{' '}
+            拥有数据集，必须先将所有权转移给其他活跃用户才能禁用。
+          </Text>
+        </div>
+        <Form layout="vertical">
+          <Form.Item label="选择新所有者" required>
+            <Select
+              placeholder="请选择接收数据集的用户"
+              onChange={(value) => setNewOwnerId(value)}
+              value={newOwnerId}
+            >
+              {users
+                .filter(
+                  (u) =>
+                    u.id !== userToDisable?.id &&
+                    u.is_active &&
+                    (u.role === 'admin' || u.role === 'super_admin'),
+                )
+                .map((u) => (
+                  <Select.Option key={u.id} value={u.id}>
+                    {u.username} ({roleLabels[u.role]})
+                  </Select.Option>
+                ))}
+            </Select>
           </Form.Item>
         </Form>
       </Modal>

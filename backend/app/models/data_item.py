@@ -35,8 +35,12 @@ class DataItem(Base):
 
     status = Column(SQLEnum(ItemStatus), default=ItemStatus.PENDING)
     is_marked = Column(Boolean, default=False)  # 是否被标记(不确定/待定)
-    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
-    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_to = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     reviewed_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -49,6 +53,9 @@ class DataItem(Base):
     )
     revisions = relationship(
         "Revision", back_populates="item", cascade="all, delete-orphan"
+    )
+    auth_code_reviews = relationship(
+        "AuthCodeReviewedItem", back_populates="item", cascade="all, delete-orphan"
     )
 
     # 复合索引

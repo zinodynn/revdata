@@ -122,3 +122,21 @@ async def get_auth_code_from_session(
         select(AuthCode).where(AuthCode.id == session.auth_code_id)
     )
     return result.scalar_one_or_none()
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """要求管理员权限"""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限"
+        )
+    return current_user
+
+
+async def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
+    """要求超级管理员权限"""
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="需要超级管理员权限"
+        )
+    return current_user

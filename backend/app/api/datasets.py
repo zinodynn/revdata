@@ -1,19 +1,19 @@
 import csv
 import io
 import json
-import os
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.data_item import DataItem, ItemStatus, ItemType
 from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
-from app.models.user import User
+from app.models.task import Task
+from app.models.user import User, UserRole
 from app.schemas.dataset import (
     DatasetCreate,
     DatasetListResponse,
@@ -182,7 +182,7 @@ async def upload_dataset(
     name: str = Form(...),
     description: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """上传并导入数据集"""
     # 检测文件格式
@@ -321,20 +321,43 @@ async def get_dataset(
     return dataset
 
 
+@router.post("/transfer-all")
+async def transfer_all_datasets(
+    from_user_id: int,
+    to_user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """批量转移数据集所有权（管理员）"""
+    # 检查目标用户
+    result = await db.execute(select(User).where(User.id == to_user_id))
+    to_user = result.scalar_one_or_none()
+    if not to_user or not to_user.is_active:
+        raise HTTPException(status_code=400, detail="目标用户不存在或已禁用")
+
+    if to_user.role not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=400, detail="只能将所有权转移给管理员或超级管理员"
+        )
+
+    # 执行转移
+    result = await db.execute(
+        update(Dataset)
+        .where(Dataset.owner_id == from_user_id)
+        .values(owner_id=to_user_id)
+    )
+    await db.commit()
+    return {"message": f"成功转移了 {result.rowcount} 个数据集"}
+
+
 @router.put("/{dataset_id}", response_model=DatasetResponse)
 async def update_dataset(
     dataset_id: int,
     update_data: DatasetUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """更新数据集配置（管理员）"""
-    # 检查权限
-    if current_user.role not in ["super_admin", "admin"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="只有管理员可以修改数据集配置"
-        )
-
     result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
     dataset = result.scalar_one_or_none()
 
@@ -354,11 +377,74 @@ async def update_dataset(
         dataset.review_config = update_data.review_config.model_dump()
     if update_data.status is not None:
         dataset.status = update_data.status
+    if update_data.owner_id is not None:
+        # 检查新所有者是否存在且活跃
+        result = await db.execute(select(User).where(User.id == update_data.owner_id))
+        new_owner = result.scalar_one_or_none()
+        if not new_owner:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="新所有者不存在"
+            )
+        if not new_owner.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="不能将所有权转移给已禁用的用户",
+            )
+        if new_owner.role not in ["super_admin", "admin"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="只能将所有权转移给管理员或超级管理员",
+            )
+        dataset.owner_id = update_data.owner_id
 
     await db.commit()
     await db.refresh(dataset)
 
     return dataset
+
+
+@router.delete("/{dataset_id}")
+async def delete_dataset(
+    dataset_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """删除数据集（仅限所有者或超级管理员）"""
+    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+    dataset = result.scalar_one_or_none()
+
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在"
+        )
+
+    # 权限检查：只有所有者或超级管理员可以删除
+    if (
+        current_user.role != UserRole.SUPER_ADMIN
+        and dataset.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有数据集所有者或超级管理员可以删除数据集",
+        )
+
+    # 检查是否有正在进行的任务
+    task_result = await db.execute(
+        select(func.count(Task.id)).where(
+            Task.dataset_id == dataset_id, Task.status != "completed"
+        )
+    )
+    active_tasks = task_result.scalar()
+    if active_tasks > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"该数据集还有 {active_tasks} 个未完成的任务，请先删除或完成任务后再删除数据集",
+        )
+
+    await db.delete(dataset)
+    await db.commit()
+
+    return {"message": "数据集已删除"}
 
 
 @router.get("/{dataset_id}/preview")
