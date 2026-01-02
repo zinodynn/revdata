@@ -58,8 +58,14 @@ class AuthCode(Base):
     # 关系
     dataset = relationship("Dataset", back_populates="auth_codes")
     creator = relationship("User", back_populates="created_auth_codes")
-    sessions = relationship("AuthCodeSession", back_populates="auth_code")
-    reviewed_items = relationship("AuthCodeReviewedItem", back_populates="auth_code")
+    sessions = relationship(
+        "AuthCodeSession", back_populates="auth_code", cascade="all, delete-orphan"
+    )
+    reviewed_items = relationship(
+        "AuthCodeReviewedItem",
+        back_populates="auth_code",
+        cascade="all, delete-orphan",
+    )
 
     @classmethod
     def generate_code(cls) -> str:
@@ -117,3 +123,4 @@ class AuthCodeReviewedItem(Base):
 
     # 关系
     auth_code = relationship("AuthCode", back_populates="reviewed_items")
+    item = relationship("DataItem", back_populates="auth_code_reviews")

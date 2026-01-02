@@ -50,6 +50,9 @@ class DataItem(Base):
     revisions = relationship(
         "Revision", back_populates="item", cascade="all, delete-orphan"
     )
+    auth_code_reviews = relationship(
+        "AuthCodeReviewedItem", back_populates="item", cascade="all, delete-orphan"
+    )
 
     # 复合索引
     __table_args__ = (

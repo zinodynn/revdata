@@ -30,16 +30,32 @@ class User(Base):
 
     # Relationships
     owned_datasets = relationship(
-        "Dataset", back_populates="owner", foreign_keys="Dataset.owner_id"
+        "Dataset",
+        back_populates="owner",
+        foreign_keys="Dataset.owner_id",
+        cascade="all, delete-orphan",
     )
     assigned_items = relationship(
-        "DataItem", back_populates="assignee", foreign_keys="DataItem.assigned_to"
+        "DataItem",
+        back_populates="assignee",
+        foreign_keys="DataItem.assigned_to",
+        cascade="all, delete-orphan",
     )
-    revisions = relationship("Revision", back_populates="user")
+    revisions = relationship(
+        "Revision", back_populates="user", cascade="all, delete-orphan"
+    )
     assigned_tasks = relationship(
-        "Task", back_populates="assignee", foreign_keys="Task.assignee_id"
+        "Task",
+        back_populates="assignee",
+        foreign_keys="Task.assignee_id",
+        cascade="all, delete-orphan",
     )
     created_tasks = relationship(
-        "Task", back_populates="assigner", foreign_keys="Task.assigner_id"
+        "Task",
+        back_populates="assigner",
+        foreign_keys="Task.assigner_id",
+        cascade="all, delete-orphan",
     )
-    created_auth_codes = relationship("AuthCode", back_populates="creator")
+    created_auth_codes = relationship(
+        "AuthCode", back_populates="creator", cascade="all, delete-orphan"
+    )

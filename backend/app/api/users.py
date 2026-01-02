@@ -9,10 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.security import get_password_hash
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+ROLE_HIERARCHY = {
+    UserRole.SUPER_ADMIN: 4,
+    UserRole.ADMIN: 3,
+    UserRole.REVIEWER: 2,
+    UserRole.VIEWER: 1,
+}
 
 
 def require_admin(current_user: User = Depends(get_current_user)):
@@ -64,9 +71,10 @@ async def create_user(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="邮箱已存在")
 
-    # 普通管理员不能创建超级管理员
-    if data.role == "super_admin" and current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="无权创建超级管理员")
+    # 检查角色权限：只能创建比自己角色等级低的用户
+    if current_user.role != UserRole.SUPER_ADMIN:
+        if ROLE_HIERARCHY.get(data.role, 0) >= ROLE_HIERARCHY.get(current_user.role, 0):
+            raise HTTPException(status_code=403, detail="无权创建同级或更高权限的用户")
 
     user = User(
         username=data.username,
@@ -93,18 +101,26 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 不能修改超级管理员（除非自己是超级管理员）
-    if user.role == "super_admin" and current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="无权修改超级管理员")
+    # 检查角色权限：普通管理员不能修改同级或更高权限的用户（除非是修改自己）
+    if current_user.role != UserRole.SUPER_ADMIN and user.id != current_user.id:
+        if ROLE_HIERARCHY.get(user.role, 0) >= ROLE_HIERARCHY.get(current_user.role, 0):
+            raise HTTPException(status_code=403, detail="无权修改同级或更高权限的用户")
 
     if data.username is not None:
         user.username = data.username
     if data.email is not None:
         user.email = data.email
     if data.role is not None:
-        # 普通管理员不能设置超级管理员角色
-        if data.role == "super_admin" and current_user.role != "super_admin":
-            raise HTTPException(status_code=403, detail="无权设置超级管理员角色")
+        # 检查角色设置权限
+        if current_user.role != UserRole.SUPER_ADMIN:
+            # 不能设置成比自己更高或同级的角色
+            if ROLE_HIERARCHY.get(data.role, 0) >= ROLE_HIERARCHY.get(
+                current_user.role, 0
+            ):
+                if data.role != user.role:  # 如果角色发生了变化
+                    raise HTTPException(
+                        status_code=403, detail="无权设置同级或更高权限的角色"
+                    )
         user.role = data.role
 
     await db.commit()
@@ -127,9 +143,10 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 不能删除超级管理员
-    if user.role == "super_admin":
-        raise HTTPException(status_code=403, detail="不能删除超级管理员")
+    # 检查角色权限：普通管理员不能删除同级或更高权限的用户
+    if current_user.role != UserRole.SUPER_ADMIN:
+        if ROLE_HIERARCHY.get(user.role, 0) >= ROLE_HIERARCHY.get(current_user.role, 0):
+            raise HTTPException(status_code=403, detail="无权删除同级或更高权限的用户")
 
     await db.delete(user)
     await db.commit()
@@ -148,9 +165,12 @@ async def reset_password(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 不能重置超级管理员密码（除非自己是超级管理员）
-    if user.role == "super_admin" and current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="无权重置超级管理员密码")
+    # 检查角色权限：普通管理员不能重置同级或更高权限用户的密码（除非是自己）
+    if current_user.role != UserRole.SUPER_ADMIN and user.id != current_user.id:
+        if ROLE_HIERARCHY.get(user.role, 0) >= ROLE_HIERARCHY.get(current_user.role, 0):
+            raise HTTPException(
+                status_code=403, detail="无权重置同级或更高权限用户的密码"
+            )
 
     # 生成随机密码
     new_password = "".join(
