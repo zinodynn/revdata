@@ -22,7 +22,7 @@ import {
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { usersApi } from '../services/api'
-
+import { useAuthStore } from '../stores/authStore'
 const { Title, Text } = Typography
 
 interface User {
@@ -37,21 +37,41 @@ interface User {
 const roleColors: Record<string, string> = {
   super_admin: 'red',
   admin: 'orange',
+  reviewer: 'green',
   viewer: 'blue',
 }
 
 const roleLabels: Record<string, string> = {
   super_admin: '超级管理员',
   admin: '管理员',
-  viewer: '审核员',
+  reviewer: '审核员',
+  viewer: '查看者',
 }
 
 export default function MembersPage() {
+  const { user: currentUser } = useAuthStore()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [form] = Form.useForm()
+
+  const roleHierarchy: Record<string, number> = {
+    super_admin: 4,
+    admin: 3,
+    reviewer: 2,
+    viewer: 1,
+  }
+
+  const canManage = (targetUser: User) => {
+    if (currentUser?.role === 'super_admin') return true
+    return (roleHierarchy[currentUser?.role || ''] || 0) > (roleHierarchy[targetUser.role] || 0)
+  }
+
+  const canEdit = (targetUser: User) => {
+    if (currentUser?.id === targetUser.id) return true
+    return canManage(targetUser)
+  }
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -167,6 +187,7 @@ export default function MembersPage() {
             size="small"
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
+            disabled={!canEdit(record)}
           >
             编辑
           </Button>
@@ -175,11 +196,22 @@ export default function MembersPage() {
             size="small"
             icon={<KeyOutlined />}
             onClick={() => handleResetPassword(record.id)}
+            disabled={!canEdit(record)}
           >
             重置密码
           </Button>
-          <Popconfirm title="确定删除该用户吗？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="text" size="small" danger icon={<DeleteOutlined />}>
+          <Popconfirm
+            title="确定删除该用户吗？"
+            onConfirm={() => handleDelete(record.id)}
+            disabled={!canManage(record) || currentUser?.id === record.id}
+          >
+            <Button
+              type="text"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={!canManage(record) || currentUser?.id === record.id}
+            >
               删除
             </Button>
           </Popconfirm>
@@ -262,11 +294,15 @@ export default function MembersPage() {
             name="role"
             label="角色"
             rules={[{ required: true, message: '请选择角色' }]}
-            initialValue="viewer"
+            initialValue="reviewer"
           >
             <Select>
-              <Select.Option value="viewer">审核员</Select.Option>
+              <Select.Option value="viewer">查看者</Select.Option>
+              <Select.Option value="reviewer">审核员</Select.Option>
               <Select.Option value="admin">管理员</Select.Option>
+              {currentUser?.role === 'super_admin' && (
+                <Select.Option value="super_admin">超级管理员</Select.Option>
+              )}
             </Select>
           </Form.Item>
 

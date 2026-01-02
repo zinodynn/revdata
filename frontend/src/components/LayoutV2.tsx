@@ -204,7 +204,18 @@ export default function LayoutV2() {
                   />
                   <span style={{ color: isDark ? '#e8e8e8' : undefined }}>
                     {user?.username}
-                    {isAdmin && (
+                    {user?.role === 'super_admin' && (
+                      <span
+                        style={{
+                          marginLeft: 4,
+                          fontSize: 11,
+                          color: '#52c41a',
+                        }}
+                      >
+                        (超级管理员)
+                      </span>
+                    )}
+                    {user?.role === 'admin' && (
                       <span
                         style={{
                           marginLeft: 4,
