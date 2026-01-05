@@ -167,7 +167,7 @@ export default function LoginPage() {
               <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
                 <Input
                   prefix={<UserOutlined style={{ color: '#667eea' }} />}
-                  placeholder="Enter Email Or Number"
+                  placeholder="Enter Username"
                   style={{
                     borderRadius: '10px',
                     padding: '14px',
