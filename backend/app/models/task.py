@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy import JSON, Boolean, Column, DateTime
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -38,6 +38,9 @@ class Task(Base):
 
     # 委派记录
     delegated_from_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+
+    # 是否已被派发者查看（用于提醒功能）
+    reviewed_by_assigner = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

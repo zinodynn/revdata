@@ -297,7 +297,7 @@ export default function PureReviewPage() {
               <>
                 <Button onClick={handleCancel}>取消 (Esc)</Button>
                 <Button type="primary" onClick={handleSave} loading={saving}>
-                  保存 (Ctrl+S)
+                  保存 (Alt+S)
                 </Button>
               </>
             ) : (

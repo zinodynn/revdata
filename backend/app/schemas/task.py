@@ -29,12 +29,20 @@ class TaskResponse(BaseModel):
     priority: int
     note: Optional[str]
     due_date: Optional[datetime]
+    delegated_from_task_id: Optional[int] = None
+    reviewed_by_assigner: bool = False
     created_at: datetime
     completed_at: Optional[datetime]
+
+    # 额外信息（从关联查询获取）
+    dataset_name: Optional[str] = None
+    assignee_name: Optional[str] = None
+    assigner_name: Optional[str] = None
 
     # 进度信息
     total_items: int = 0
     reviewed_items: int = 0
+    status_counts: Optional[dict] = None
 
     class Config:
         from_attributes = True

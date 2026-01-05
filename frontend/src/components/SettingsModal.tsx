@@ -101,7 +101,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       approve: 'ctrl+enter',
       reject: 'ctrl+shift+enter',
       edit: 'ctrl+e',
-      save: 'ctrl+s',
+      save: 'alt+s',
       cancel: 'escape',
       focusQ: 'q',
       focusA: 'a',

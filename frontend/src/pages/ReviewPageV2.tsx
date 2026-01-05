@@ -1,5 +1,6 @@
 import {
   ArrowLeftOutlined,
+  CheckCircleOutlined,
   DownloadOutlined,
   FastForwardOutlined,
   FlagOutlined,
@@ -29,7 +30,8 @@ import ExportModal from '../components/ExportModal'
 import MarkedItemsModal from '../components/MarkedItemsModal'
 import QACardUnified from '../components/QACardUnified'
 import ShareModal from '../components/ShareModal'
-import { datasetsApi, itemsApi } from '../services/api'
+import { datasetsApi, itemsApi, tasksApi } from '../services/api'
+import { useSettingsStore } from '../stores/settingsStore'
 
 const { Title, Text } = Typography
 
@@ -66,6 +68,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dataset, setDataset] = useState<any>(null)
+  const [task, setTask] = useState<any>(null)
   const [currentItem, setCurrentItem] = useState<any>(null)
   const [currentIndex, setCurrentIndex] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
@@ -90,6 +93,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const [markedItemsModalOpen, setMarkedItemsModalOpen] = useState(false)
   const [markedItemIds, setMarkedItemIds] = useState<number[]>([])
   const [headerExpanded, setHeaderExpanded] = useState(false)
+  const [isCompleted, setIsCompleted] = useState(false)
 
   // 是否可编辑
   const canEdit = !shareToken || sharePermission === 'edit'
@@ -99,7 +103,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     if (datasetId) {
       datasetsApi.get(parseInt(datasetId)).then((res) => setDataset(res.data))
     }
-  }, [datasetId])
+    const taskId = searchParams.get('taskId')
+    if (taskId) {
+      tasksApi.get(parseInt(taskId)).then((res) => setTask(res.data))
+    }
+  }, [datasetId, searchParams])
 
   // 获取语料
   const fetchItem = useCallback(
@@ -107,7 +115,15 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       if (!datasetId) return
       setLoading(true)
       try {
-        const res = await itemsApi.list(parseInt(datasetId), index, 1)
+        const taskId = searchParams.get('taskId')
+        const res = await itemsApi.list(
+          parseInt(datasetId),
+          index,
+          1,
+          undefined,
+          undefined,
+          taskId ? parseInt(taskId) : undefined,
+        )
         const {
           items,
           total,
@@ -164,24 +180,130 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   }
 
   const goNext = () => {
-    if (currentIndex < totalItems && !editingField) fetchItem(currentIndex + 1)
+    if (currentIndex < totalItems && !editingField) {
+      fetchItem(currentIndex + 1)
+    } else if (currentIndex >= totalItems && !editingField) {
+      // 到达最后一条，显示完成提示
+      setIsCompleted(true)
+    }
   }
 
   const goToSeq = (seq: number) => {
-    if (seq >= 1 && seq <= totalItems && !editingField) {
+    if (editingField) return
+
+    // 无论是全局模式还是任务模式，seq 在此处都代表列表中的索引(page)
+    // 因为 InputNumber 的 max 限制为 totalItems (当前列表总数)
+    if (seq >= 1 && seq <= totalItems) {
       fetchItem(seq)
       setJumpToSeq(null)
+    } else {
+      message.warning(`索引 ${seq} 超出范围`)
     }
   }
 
   const goToNextPending = async () => {
     if (!datasetId || editingField) return
     try {
-      const res = await itemsApi.list(parseInt(datasetId), 1, 1, 'pending')
+      const taskId = searchParams.get('taskId')
+      const res = await itemsApi.list(
+        parseInt(datasetId),
+        1,
+        1,
+        'pending',
+        undefined,
+        taskId ? parseInt(taskId) : undefined,
+      )
       if (res.data.items.length > 0) {
-        fetchItem(res.data.items[0].seq_num)
+        const item = res.data.items[0]
+        if (taskId && task) {
+          // 任务模式下，需要计算相对索引
+          if (task.item_ids) {
+            // 离散任务，暂时无法自动跳转到准确位置，除非遍历
+            // 简单处理：提示用户
+            message.info('离散任务模式下暂不支持自动跳转到下一条待审核')
+          } else {
+            // 范围任务
+            const relativeIndex = item.seq_num - task.item_start + 1
+            fetchItem(relativeIndex)
+          }
+        } else {
+          // 全局模式，seq_num 即为索引
+          fetchItem(item.seq_num)
+        }
       } else {
         message.info('没有待审核的语料了')
+      }
+    } catch (error) {
+      message.error('跳转失败')
+    }
+  }
+
+  // 跳转到指定状态的第一个语料
+  const goToStatus = async (status: string) => {
+    if (!datasetId || editingField) return
+    try {
+      const taskId = searchParams.get('taskId')
+      const res = await itemsApi.list(
+        parseInt(datasetId),
+        1,
+        1,
+        status,
+        undefined,
+        taskId ? parseInt(taskId) : undefined,
+      )
+      if (res.data.items.length > 0) {
+        const item = res.data.items[0]
+        if (taskId && task) {
+          if (task.item_ids) {
+            message.info('离散任务模式下暂不支持按状态跳转')
+          } else {
+            const relativeIndex = item.seq_num - task.item_start + 1
+            fetchItem(relativeIndex)
+          }
+        } else {
+          fetchItem(item.seq_num)
+        }
+      } else {
+        const statusLabels: Record<string, string> = {
+          pending: '待审核',
+          approved: '已通过',
+          rejected: '已拒绝',
+          modified: '已修改',
+        }
+        message.info(`没有${statusLabels[status] || status}状态的语料`)
+      }
+    } catch (error) {
+      message.error('跳转失败')
+    }
+  }
+
+  // 跳转到第一个标记的语料
+  const goToMarked = async () => {
+    if (!datasetId || editingField) return
+    try {
+      const taskId = searchParams.get('taskId')
+      const res = await itemsApi.list(
+        parseInt(datasetId),
+        1,
+        1,
+        undefined,
+        true,
+        taskId ? parseInt(taskId) : undefined,
+      )
+      if (res.data.items.length > 0) {
+        const item = res.data.items[0]
+        if (taskId && task) {
+          if (task.item_ids) {
+            message.info('离散任务模式下暂不支持按标记跳转')
+          } else {
+            const relativeIndex = item.seq_num - task.item_start + 1
+            fetchItem(relativeIndex)
+          }
+        } else {
+          fetchItem(item.seq_num)
+        }
+      } else {
+        message.info('没有标记的语料')
       }
     } catch (error) {
       message.error('跳转失败')
@@ -254,7 +376,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     try {
       await itemsApi.approve(currentItem.id)
       message.success('已通过')
-      goNext()
+      if (currentIndex >= totalItems) {
+        setIsCompleted(true)
+      } else {
+        goNext()
+      }
     } catch (error) {
       message.error('操作失败')
     } finally {
@@ -269,7 +395,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     try {
       await itemsApi.reject(currentItem.id)
       message.success('已拒绝')
-      goNext()
+      if (currentIndex >= totalItems) {
+        setIsCompleted(true)
+      } else {
+        goNext()
+      }
     } catch (error) {
       message.error('操作失败')
     } finally {
@@ -291,6 +421,23 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       fetchItem(currentIndex)
     } catch (error) {
       message.error('操作失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 完成任务
+  const handleCompleteTask = async () => {
+    const taskId = searchParams.get('taskId')
+    if (!taskId) return
+
+    setSaving(true)
+    try {
+      await tasksApi.complete(parseInt(taskId))
+      message.success('任务已完成')
+      navigate('/tasks')
+    } catch (error) {
+      message.error('完成任务失败')
     } finally {
       setSaving(false)
     }
@@ -329,30 +476,32 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   }
 
   // 快捷键
-  useHotkeys('pageup', goPrev, { enabled: !editingField })
-  useHotkeys('pagedown', goNext, { enabled: !editingField })
-  useHotkeys('ctrl+enter', handleApprove, {
+  const hotkeys = useSettingsStore((state) => state.hotkeys)
+
+  useHotkeys(hotkeys.prevItem, goPrev, { enabled: !editingField })
+  useHotkeys(hotkeys.nextItem, goNext, { enabled: !editingField })
+  useHotkeys(hotkeys.approve, handleApprove, {
     enabled: !editingField && canEdit,
     preventDefault: true,
   })
-  useHotkeys('ctrl+shift+enter', handleReject, {
+  useHotkeys(hotkeys.reject, handleReject, {
     enabled: !editingField && canEdit,
     preventDefault: true,
   })
-  useHotkeys('q', () => startEdit('q_0'), {
+  useHotkeys(hotkeys.focusQ, () => startEdit('q_0'), {
     enabled: !editingField && canEdit,
     preventDefault: true,
   })
-  useHotkeys('a', () => startEdit('a_0'), {
+  useHotkeys(hotkeys.focusA, () => startEdit('a_0'), {
     enabled: !editingField && canEdit,
     preventDefault: true,
   })
-  useHotkeys('alt+s', handleSave, { enabled: !!editingField && canEdit, preventDefault: true })
-  useHotkeys('escape', handleCancel, { enabled: !!editingField })
+  useHotkeys(hotkeys.save, handleSave, { enabled: !!editingField && canEdit, preventDefault: true })
+  useHotkeys(hotkeys.cancel, handleCancel, { enabled: !!editingField })
   useHotkeys('ctrl+g', () => document.getElementById('jump-input')?.focus(), {
     preventDefault: true,
   })
-  useHotkeys('ctrl+shift+n', goToNextPending, { enabled: !editingField, preventDefault: true })
+  useHotkeys(hotkeys.jumpToNext, goToNextPending, { enabled: !editingField, preventDefault: true })
 
   const actionMenuItems = [
     {
@@ -360,6 +509,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       icon: <ShareAltOutlined />,
       label: '分享',
       onClick: () => setShareModalOpen(true),
+      disabled: task?.status === 'completed',
     },
     {
       key: 'export',
@@ -369,12 +519,91 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     },
   ]
 
+  // 如果是任务模式，添加完成任务选项
+  const taskId = searchParams.get('taskId')
+  if (taskId && !shareToken) {
+    actionMenuItems.push({
+      key: 'complete',
+      icon: <CheckCircleOutlined />,
+      label: '完成任务',
+      onClick: handleCompleteTask,
+      disabled: task?.status === 'completed',
+    })
+  }
+
+  // 完成状态显示
+  if (isCompleted) {
+    return (
+      <div
+        style={{
+          minHeight: '80vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Card
+          style={{
+            textAlign: 'center',
+            padding: '40px 20px',
+            maxWidth: 500,
+          }}
+        >
+          <div style={{ marginBottom: 24 }}>
+            <CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a' }} />
+          </div>
+          <Title level={3}>审核任务已完成</Title>
+          <Text type="secondary" style={{ fontSize: 16 }}>
+            感谢您的辛勤工作！您已完成所有分配的语料审核。
+          </Text>
+          <div style={{ marginTop: 32 }}>
+            <Space size="large">
+              <Button
+                size="large"
+                type="primary"
+                onClick={async () => {
+                  const taskId = searchParams.get('taskId')
+                  if (taskId && task) {
+                    try {
+                      await tasksApi.complete(parseInt(taskId, 10))
+                      message.success('任务已完成')
+                    } catch (error: any) {
+                      message.error(error.response?.data?.detail || '完成任务失败')
+                    }
+                  }
+                  navigate(taskId ? '/tasks' : '/datasets')
+                }}
+              >
+                完成并退出
+              </Button>
+              <Button
+                size="large"
+                onClick={() => {
+                  setIsCompleted(false)
+                  fetchItem(1)
+                }}
+              >
+                重新检查
+              </Button>
+            </Space>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* 头部 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/datasets')}>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => {
+              const taskId = searchParams.get('taskId')
+              navigate(taskId ? '/tasks' : '/datasets')
+            }}
+          >
             返回
           </Button>
           <Title level={4} style={{ margin: 0 }}>
@@ -447,31 +676,41 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               visibility: headerExpanded ? 'visible' : 'hidden',
             }}
           >
-            <Statistic
-              title="待审核"
-              value={stats.pending}
-              valueStyle={{ fontSize: 20, color: '#999' }}
-            />
-            <Statistic
-              title="已通过"
-              value={stats.approved}
-              valueStyle={{ fontSize: 20, color: '#52c41a' }}
-            />
-            <Statistic
-              title="已拒绝"
-              value={stats.rejected}
-              valueStyle={{ fontSize: 20, color: '#ff4d4f' }}
-            />
-            <Statistic
-              title="已修改"
-              value={stats.modified}
-              valueStyle={{ fontSize: 20, color: '#faad14' }}
-            />
-            <Statistic
-              title="待定(Marked)"
-              value={stats.marked}
-              valueStyle={{ fontSize: 20, color: '#722ed1' }}
-            />
+            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('pending')}>
+              <Statistic
+                title="待审核"
+                value={stats.pending}
+                valueStyle={{ fontSize: 20, color: '#999' }}
+              />
+            </div>
+            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('approved')}>
+              <Statistic
+                title="已通过"
+                value={stats.approved}
+                valueStyle={{ fontSize: 20, color: '#52c41a' }}
+              />
+            </div>
+            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('rejected')}>
+              <Statistic
+                title="已拒绝"
+                value={stats.rejected}
+                valueStyle={{ fontSize: 20, color: '#ff4d4f' }}
+              />
+            </div>
+            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('modified')}>
+              <Statistic
+                title="已修改"
+                value={stats.modified}
+                valueStyle={{ fontSize: 20, color: '#faad14' }}
+              />
+            </div>
+            <div style={{ cursor: 'pointer' }} onClick={() => goToMarked()}>
+              <Statistic
+                title="待定(Marked)"
+                value={stats.marked}
+                valueStyle={{ fontSize: 20, color: '#722ed1' }}
+              />
+            </div>
           </div>
 
           {/* Right: Jump Controls */}
@@ -639,16 +878,22 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           {editingField ? (
             <>
               <Button size="large" onClick={handleCancel}>
-                取消 (Esc)
+                取消 ({hotkeys.cancel})
               </Button>
               <Button size="large" type="primary" onClick={handleSave} loading={saving}>
-                保存 (Alt+S)
+                保存 ({hotkeys.save.toUpperCase()})
               </Button>
             </>
           ) : (
             canEdit && (
               <>
-                <Button size="large" icon={<FlagOutlined />} onClick={handleMark} loading={saving}>
+                <Button
+                  size="large"
+                  icon={<FlagOutlined />}
+                  onClick={handleMark}
+                  loading={saving}
+                  disabled={task?.status === 'completed'}
+                >
                   {currentItem?.is_marked ? '取消标记' : '标记'}
                 </Button>
                 {stats.marked > 0 && (
@@ -657,11 +902,19 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                     icon={<SendOutlined />}
                     onClick={handleDelegateMarked}
                     loading={loading}
+                    disabled={task?.status === 'completed'}
                   >
                     生成委派 ({stats.marked})
                   </Button>
                 )}
-                <Button size="large" type="primary" danger onClick={handleReject} loading={saving}>
+                <Button
+                  size="large"
+                  type="primary"
+                  danger
+                  onClick={handleReject}
+                  loading={saving}
+                  disabled={task?.status === 'completed'}
+                >
                   拒绝 (Ctrl+Shift+Enter)
                 </Button>
                 <Button
@@ -670,6 +923,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                   style={{ background: '#52c41a', borderColor: '#52c41a' }}
                   onClick={handleApprove}
                   loading={saving}
+                  disabled={task?.status === 'completed'}
                 >
                   通过 (Ctrl+Enter)
                 </Button>

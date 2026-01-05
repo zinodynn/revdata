@@ -123,6 +123,90 @@ async def list_my_tasks(
     return TaskListResponse(items=task_responses, total=len(task_responses))
 
 
+@router.get("/assigned-by-me", response_model=TaskListResponse)
+async def list_assigned_by_me_tasks(
+    status_filter: Optional[TaskStatus] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取我派发的任务列表"""
+    conditions = [Task.assigner_id == current_user.id]
+    if status_filter:
+        conditions.append(Task.status == status_filter)
+
+    result = await db.execute(
+        select(Task)
+        .where(and_(*conditions))
+        .order_by(Task.priority.desc(), Task.created_at.desc())
+    )
+    tasks = result.scalars().all()
+
+    # 计算每个任务的进度
+    task_responses = []
+    for task in tasks:
+        response = TaskResponse.model_validate(task)
+        if task.item_ids:
+            response.total_items = len(task.item_ids)
+
+            # 查询已审核数量 (item_ids)
+            reviewed_result = await db.execute(
+                select(func.count(DataItem.id)).where(
+                    and_(
+                        DataItem.id.in_(task.item_ids),
+                        DataItem.status != ItemStatus.PENDING,
+                    )
+                )
+            )
+
+            # 查询各状态数量
+            status_counts = {}
+            for status in ItemStatus:
+                status_result = await db.execute(
+                    select(func.count(DataItem.id)).where(
+                        and_(
+                            DataItem.id.in_(task.item_ids),
+                            DataItem.status == status,
+                        )
+                    )
+                )
+                status_counts[status.value] = status_result.scalar()
+        else:
+            response.total_items = task.item_end - task.item_start + 1
+
+            # 查询已审核数量 (range)
+            reviewed_result = await db.execute(
+                select(func.count(DataItem.id)).where(
+                    and_(
+                        DataItem.dataset_id == task.dataset_id,
+                        DataItem.seq_num >= task.item_start,
+                        DataItem.seq_num <= task.item_end,
+                        DataItem.status != ItemStatus.PENDING,
+                    )
+                )
+            )
+
+            # 查询各状态数量
+            status_counts = {}
+            for status in ItemStatus:
+                status_result = await db.execute(
+                    select(func.count(DataItem.id)).where(
+                        and_(
+                            DataItem.dataset_id == task.dataset_id,
+                            DataItem.seq_num >= task.item_start,
+                            DataItem.seq_num <= task.item_end,
+                            DataItem.status == status,
+                        )
+                    )
+                )
+                status_counts[status.value] = status_result.scalar()
+
+        response.reviewed_items = reviewed_result.scalar()
+        response.status_counts = status_counts  # type: ignore
+        task_responses.append(response)
+
+    return TaskListResponse(items=task_responses, total=len(task_responses))
+
+
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: int,
@@ -272,6 +356,57 @@ async def complete_task(
             )
         )
     )
+    response.reviewed_items = reviewed_result.scalar()
+
+    return response
+
+
+@router.post("/{task_id}/mark-reviewed", response_model=TaskResponse)
+async def mark_task_reviewed(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """标记任务为已查看（派发者查看已完成的任务）"""
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
+
+    if task.assigner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="只能查看自己派发的任务"
+        )
+
+    task.reviewed_by_assigner = True
+
+    await db.commit()
+    await db.refresh(task)
+
+    response = TaskResponse.model_validate(task)
+    if task.item_ids:
+        response.total_items = len(task.item_ids)
+        reviewed_result = await db.execute(
+            select(func.count(DataItem.id)).where(
+                and_(
+                    DataItem.id.in_(task.item_ids),
+                    DataItem.status != ItemStatus.PENDING,
+                )
+            )
+        )
+    else:
+        response.total_items = task.item_end - task.item_start + 1
+        reviewed_result = await db.execute(
+            select(func.count(DataItem.id)).where(
+                and_(
+                    DataItem.dataset_id == task.dataset_id,
+                    DataItem.seq_num >= task.item_start,
+                    DataItem.seq_num <= task.item_end,
+                    DataItem.status != ItemStatus.PENDING,
+                )
+            )
+        )
     response.reviewed_items = reviewed_result.scalar()
 
     return response

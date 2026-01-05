@@ -10,9 +10,19 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { Layout as AntLayout, Avatar, Button, ConfigProvider, Dropdown, Menu, theme } from 'antd'
+import {
+  Layout as AntLayout,
+  Avatar,
+  Badge,
+  Button,
+  ConfigProvider,
+  Dropdown,
+  Menu,
+  theme,
+} from 'antd'
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { tasksApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import SettingsModal from './SettingsModal'
@@ -45,9 +55,24 @@ export default function LayoutV2() {
   const { user, logout } = useAuthStore()
   const { theme: appTheme, toggleTheme, siderCollapsed, setSiderCollapsed } = useSettingsStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [unreadTaskCount, setUnreadTaskCount] = useState(0)
 
   // 判断是否为管理员
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+
+  // 获取未读任务数量
+  const fetchUnreadTaskCount = async () => {
+    try {
+      const res = await tasksApi.assignedByMe()
+      const tasks = res.data.items || res.data
+      const count = tasks.filter(
+        (t: any) => t.status === 'completed' && !t.reviewed_by_assigner,
+      ).length
+      setUnreadTaskCount(count)
+    } catch (error) {
+      console.error('获取未读任务数量失败', error)
+    }
+  }
 
   // 非管理员默认收起侧边栏
   useEffect(() => {
@@ -55,6 +80,15 @@ export default function LayoutV2() {
       setSiderCollapsed(true)
     }
   }, [isAdmin, setSiderCollapsed])
+
+  // 定期获取未读任务数量
+  useEffect(() => {
+    if (user) {
+      fetchUnreadTaskCount()
+      const interval = setInterval(fetchUnreadTaskCount, 30000) // 每30秒刷新一次
+      return () => clearInterval(interval)
+    }
+  }, [user])
 
   // 根据角色生成菜单
   const menuItems = isAdmin
@@ -67,7 +101,11 @@ export default function LayoutV2() {
         {
           key: '/tasks',
           icon: <CheckSquareOutlined />,
-          label: '审核任务',
+          label: (
+            <Badge dot={unreadTaskCount > 0} offset={[10, 0]}>
+              审核任务
+            </Badge>
+          ),
         },
         {
           key: '/members',
@@ -79,7 +117,11 @@ export default function LayoutV2() {
         {
           key: '/tasks',
           icon: <CheckSquareOutlined />,
-          label: '我的审核',
+          label: (
+            <Badge dot={unreadTaskCount > 0} offset={[10, 0]}>
+              我的审核
+            </Badge>
+          ),
         },
       ]
 

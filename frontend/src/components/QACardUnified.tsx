@@ -472,7 +472,7 @@ export default function QACardUnified({
           {isEditing && (
             <div>
               <Button size="small" type="primary" onClick={onSave} style={{ marginRight: 8 }}>
-                保存 (Ctrl+S)
+                保存 (Alt+S)
               </Button>
               <Button size="small" onClick={onCancel}>
                 取消 (Esc)

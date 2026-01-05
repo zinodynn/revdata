@@ -101,9 +101,22 @@ export const datasetsApi = {
 
 // Items API
 export const itemsApi = {
-  list: (datasetId: number, page = 1, pageSize = 20, statusFilter?: string, isMarked?: boolean) =>
+  list: (
+    datasetId: number,
+    page = 1,
+    pageSize = 20,
+    statusFilter?: string,
+    isMarked?: boolean,
+    taskId?: number,
+  ) =>
     api.get(`/items/dataset/${datasetId}`, {
-      params: { page, page_size: pageSize, status_filter: statusFilter, is_marked: isMarked },
+      params: {
+        page,
+        page_size: pageSize,
+        status_filter: statusFilter,
+        is_marked: isMarked,
+        task_id: taskId,
+      },
     }),
   get: (id: number) => api.get(`/items/${id}`),
   getBySeq: (datasetId: number, seqNum: number) =>
@@ -120,11 +133,14 @@ export const itemsApi = {
 export const tasksApi = {
   myTasks: (statusFilter?: string) =>
     api.get('/tasks/my', { params: { status_filter: statusFilter } }),
+  assignedByMe: (statusFilter?: string) =>
+    api.get('/tasks/assigned-by-me', { params: { status_filter: statusFilter } }),
   get: (id: number) => api.get(`/tasks/${id}`),
   create: (data: any) => api.post('/tasks', data),
   delegate: (id: number, data: { new_assignee_id: number; note?: string }) =>
     api.post(`/tasks/${id}/delegate`, data),
   complete: (id: number) => api.post(`/tasks/${id}/complete`),
+  markReviewed: (id: number) => api.post(`/tasks/${id}/mark-reviewed`),
   getUsers: () => api.get('/tasks/users/list'),
   delegationHistory: (taskId: number) => api.get(`/tasks/${taskId}/delegation-history`),
 }

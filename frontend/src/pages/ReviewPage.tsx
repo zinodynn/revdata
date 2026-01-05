@@ -372,7 +372,7 @@ export default function ReviewPage() {
           {isEditing ? (
             <>
               <Button icon={<SaveOutlined />} type="primary" onClick={handleSave} loading={saving}>
-                保存 (Ctrl+S)
+                保存 (Alt+S)
               </Button>
               <Button onClick={() => setEditing(false)}>取消 (Esc)</Button>
             </>

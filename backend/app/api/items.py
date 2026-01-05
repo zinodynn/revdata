@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.models.auth_code import AuthCode, AuthCodeSession
 from app.models.data_item import DataItem, ItemStatus
 from app.models.revision import Revision
+from app.models.task import Task
 from app.models.user import User
 from app.schemas.data_item import DataItemListResponse, DataItemResponse, DataItemUpdate
 from app.utils import normalize_json_keys
@@ -32,6 +33,7 @@ async def list_items(
     page_size: int = 20,
     status_filter: Optional[ItemStatus] = None,
     is_marked: Optional[bool] = None,
+    task_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -40,6 +42,27 @@ async def list_items(
 
     # 构建查询条件
     conditions = [DataItem.dataset_id == dataset_id]
+
+    if task_id:
+        # 获取任务信息
+        task_result = await db.execute(select(Task).where(Task.id == task_id))
+        task = task_result.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # 验证任务是否属于该数据集
+        if task.dataset_id != dataset_id:
+            raise HTTPException(
+                status_code=400, detail="Task does not belong to this dataset"
+            )
+
+        # 添加任务范围过滤
+        if task.item_ids:
+            conditions.append(DataItem.id.in_(task.item_ids))
+        else:
+            conditions.append(DataItem.seq_num >= task.item_start)
+            conditions.append(DataItem.seq_num <= task.item_end)
+
     if status_filter:
         conditions.append(DataItem.status == status_filter)
     if is_marked is not None:
@@ -51,21 +74,28 @@ async def list_items(
     )
     total = count_result.scalar()
 
-    # 查询各状态数量
+    # 查询各状态数量（需要使用任务范围的基础条件）
+    base_conditions = [DataItem.dataset_id == dataset_id]
+    if task_id:
+        # 添加任务范围过滤
+        if task.item_ids:
+            base_conditions.append(DataItem.id.in_(task.item_ids))
+        else:
+            base_conditions.append(DataItem.seq_num >= task.item_start)
+            base_conditions.append(DataItem.seq_num <= task.item_end)
+
     stats = {}
     for s in ItemStatus:
+        stat_conditions = base_conditions + [DataItem.status == s]
         stat_result = await db.execute(
-            select(func.count(DataItem.id)).where(
-                and_(DataItem.dataset_id == dataset_id, DataItem.status == s)
-            )
+            select(func.count(DataItem.id)).where(and_(*stat_conditions))
         )
         stats[s.value] = stat_result.scalar()
 
     # 查询标记数量
+    marked_conditions = base_conditions + [DataItem.is_marked == True]
     marked_result = await db.execute(
-        select(func.count(DataItem.id)).where(
-            and_(DataItem.dataset_id == dataset_id, DataItem.is_marked == True)
-        )
+        select(func.count(DataItem.id)).where(and_(*marked_conditions))
     )
     marked_count = marked_result.scalar()
 
