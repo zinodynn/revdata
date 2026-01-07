@@ -13,6 +13,13 @@ export interface FieldMappingConfig {
   messages_field: string | null
   metadata_fields: string[]
   display_mode: 'conversation' | 'qa_pair' | 'plain' | 'auto'
+
+  // New multi-turn config
+  message_role_field?: string
+  message_content_field?: string
+  user_role_value?: string
+  assistant_role_value?: string
+  system_role_value?: string
 }
 
 interface Message {
@@ -129,12 +136,23 @@ export default function QACardUnified({
     // 优先使用field_mapping
     if (fieldMapping?.messages_field && content[fieldMapping.messages_field]) {
       const msgs = content[fieldMapping.messages_field]
+      const roleKey = fieldMapping.message_role_field || 'role'
+      const contentKey = fieldMapping.message_content_field || 'content'
+      const userVal = fieldMapping.user_role_value || 'user'
+      const assistantVal = fieldMapping.assistant_role_value || 'assistant'
+
       if (Array.isArray(msgs) && msgs.length > 0) {
-        return msgs.map((m: any) => ({
-          role: m.role || 'user',
-          content: String(m.content || ''),
-          images: m.images,
-        }))
+        return msgs.map((m: any) => {
+          let r = m[roleKey]
+          if (r === userVal) r = 'user'
+          else if (r === assistantVal) r = 'assistant'
+
+          return {
+            role: r || 'user',
+            content: String(m[contentKey] || ''),
+            images: m.images,
+          }
+        })
       }
     }
 
