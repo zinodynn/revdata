@@ -39,6 +39,7 @@ interface Task {
   total_items: number
   reviewed_items: number
   created_at: string
+  completed_at?: string
   assignee_name?: string
   reviewed_by_assigner?: boolean
   status_counts?: {
@@ -409,6 +410,18 @@ export default function TasksPage() {
                           title: '审核人',
                           dataIndex: 'assignee_name',
                           width: 120,
+                        },
+                        {
+                          title: '派发时间',
+                          dataIndex: 'created_at',
+                          width: 160,
+                          render: (date: string) => new Date(date).toLocaleString(),
+                        },
+                        {
+                          title: '完成时间',
+                          dataIndex: 'completed_at',
+                          width: 160,
+                          render: (date: string) => (date ? new Date(date).toLocaleString() : '-'),
                         },
                         {
                           title: '进度',
