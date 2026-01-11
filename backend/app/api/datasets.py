@@ -1,6 +1,9 @@
 import csv
 import io
 import json
+import os
+import uuid
+import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -15,7 +18,6 @@ from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
 from app.models.task import Task
 from app.models.user import User, UserRole
 from app.schemas.dataset import (
-    DatasetCreate,
     DatasetListResponse,
     DatasetResponse,
     DatasetUpdate,
@@ -85,6 +87,13 @@ def detect_fields_from_content(items: List[dict]) -> tuple[List[str], FieldMappi
         if key in all_fields:
             suggested.messages_field = key
             suggested.display_mode = DisplayMode.CONVERSATION
+            break
+
+    # 检测图片字段
+    img_keys = ["image", "images", "img", "imgs", "picture", "pictures"]
+    for key in img_keys:
+        if key in all_fields:
+            suggested.image_field = key
             break
 
     # 确定显示模式
@@ -187,7 +196,11 @@ async def upload_dataset(
     """上传并导入数据集"""
     # 检测文件格式
     filename = file.filename.lower()
-    if filename.endswith(".jsonl"):
+    is_zip = filename.endswith(".zip")
+
+    if is_zip:
+        format_type = DatasetFormat.JSONL  # 默认为JSONL,稍后检测
+    elif filename.endswith(".jsonl"):
         format_type = DatasetFormat.JSONL
     elif filename.endswith(".json"):
         format_type = DatasetFormat.JSON
@@ -198,15 +211,69 @@ async def upload_dataset(
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="不支持的文件格式,请上传 JSONL、JSON、CSV 或 TSV 文件",
+            detail="不支持的文件格式,请上传 JSONL, JSON, CSV, TSV 或 ZIP 文件",
         )
+
+    # 1. 保存文件到磁盘
+    upload_id = str(uuid.uuid4())
+    save_dir = os.path.join(settings.UPLOAD_DIR, upload_id)
+    os.makedirs(save_dir, exist_ok=True)
+
+    file_path = os.path.join(save_dir, file.filename)
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+
+    # 2. 如果是zip,解压并寻找数据文件
+    data_file_path = file_path
+    if is_zip:
+        extract_dir = save_dir
+        with zipfile.ZipFile(file_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        # 寻找数据文件
+        found = False
+        for root, dirs, files in os.walk(extract_dir):
+            for f in files:
+                if f.endswith(".jsonl"):
+                    data_file_path = os.path.join(root, f)
+                    format_type = DatasetFormat.JSONL
+                    found = True
+                    break
+                elif f.endswith(".json") and not f.endswith("package.json"):  # 简单排除
+                    data_file_path = os.path.join(root, f)
+                    format_type = DatasetFormat.JSON
+                    found = True
+                    break
+            if found:
+                break
+
+        if not found:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ZIP包中未找到支持的数据文件(.jsonl/.json)",
+            )
+
+    # 计算相对路径用于 source_file (用于API返回给前端拼接URL)
+    # relative_path = os.path.relpath(data_file_path, settings.UPLOAD_DIR)
+    # 实际上我们需要返回的是包含该文件的目录的相对路径，或者直接是文件路径
+    # 前端需要的是: base_url + image_path
+    # 图片路径通常是相对于jsonl文件的。
+    # 比如 jsonl 在 uploads/uuid/data.jsonl, 图片在 uploads/uuid/images/1.jpg
+    # jsonl 内容是 "image": "images/1.jpg"
+    # 那么前端拼接: /static/uuid/images/1.jpg
+    # 所以我们需要存储 uuid 或 relative dir
+
+    relative_path = os.path.relpath(data_file_path, settings.UPLOAD_DIR).replace(
+        "\\", "/"
+    )
 
     # 创建数据集记录
     dataset = Dataset(
         name=name,
         description=description,
         format=format_type,
-        source_file=file.filename,
+        source_file=relative_path,  # 存储相对路径 e.g. "uuid/data.jsonl"
         owner_id=current_user.id,
         status=DatasetStatus.IMPORTING,
     )
@@ -215,28 +282,27 @@ async def upload_dataset(
     await db.refresh(dataset)
 
     # 读取并解析文件内容
-    content = await file.read()
     items = []
 
     try:
-        if format_type == DatasetFormat.JSONL:
-            lines = content.decode("utf-8").strip().split("\n")
-            for line in lines:
-                if line.strip():
-                    items.append(json.loads(line))
+        # 重新读取数据文件内容
+        with open(data_file_path, "r", encoding="utf-8") as f:
+            if format_type == DatasetFormat.JSONL:
+                for line in f:
+                    if line.strip():
+                        items.append(json.loads(line))
 
-        elif format_type == DatasetFormat.JSON:
-            data = json.loads(content.decode("utf-8"))
-            if isinstance(data, list):
-                items = data
-            else:
-                items = [data]
+            elif format_type == DatasetFormat.JSON:
+                data = json.load(f)
+                if isinstance(data, list):
+                    items = data
+                else:
+                    items = [data]
 
-        elif format_type in [DatasetFormat.CSV, DatasetFormat.TSV]:
-            delimiter = "," if format_type == DatasetFormat.CSV else "\t"
-            text_content = content.decode("utf-8")
-            reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
-            items = [dict(row) for row in reader]
+            elif format_type in [DatasetFormat.CSV, DatasetFormat.TSV]:
+                delimiter = "," if format_type == DatasetFormat.CSV else "\t"
+                reader = csv.DictReader(f, delimiter=delimiter)
+                items = [dict(row) for row in reader]
 
     except Exception as e:
         # 解析失败,删除数据集
@@ -515,6 +581,35 @@ async def detect_fields_from_file(
             else:
                 items = [data]
 
+        elif filename.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(content), "r") as z:
+                # 寻找第一个支持的数据文件
+                target_file = None
+                for name in z.namelist():
+                    lower_name = name.lower()
+                    if lower_name.endswith(".jsonl") or lower_name.endswith(".json"):
+                        target_file = name
+                        break
+
+                if target_file and target_file.lower().endswith(".jsonl"):
+                    with z.open(target_file) as f:
+                        lines = f.read().decode("utf-8").strip().split("\n")
+                        for line in lines[:100]:
+                            if line.strip():
+                                items.append(json.loads(line))
+                elif target_file and target_file.lower().endswith(".json"):
+                    with z.open(target_file) as f:
+                        data = json.loads(f.read().decode("utf-8"))
+                        if isinstance(data, list):
+                            items = data[:100]
+                        else:
+                            items = [data]
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="ZIP包中未找到支持的数据文件(.jsonl/.json)",
+                    )
+
         elif filename.endswith(".csv") or filename.endswith(".tsv"):
             delimiter = "," if filename.endswith(".csv") else "\t"
             text_content = content.decode("utf-8")
@@ -531,6 +626,18 @@ async def detect_fields_from_file(
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"JSON解析失败: {str(e)}"
+        )
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="失效的ZIP文件"
+        )
+    except Exception as e:
+        print(f"Detect fields error: {e}")
+        # 如果不是我们预期的错误，继续抛出或者返回通用错误
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"文件解析失败: {str(e)}"
         )
 
     detected_fields, suggested_mapping = detect_fields_from_content(items)

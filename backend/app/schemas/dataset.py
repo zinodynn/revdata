@@ -24,6 +24,7 @@ class FieldMapping(BaseModel):
     thinking_field: Optional[str] = None  # 思考过程字段
     context_field: Optional[str] = None  # 上下文/系统提示字段
     messages_field: Optional[str] = None  # 对话消息数组字段
+    image_field: Optional[str] = None  # 图片字段 (相对路径)
 
     # 多轮对话字段配置
     message_role_field: Optional[str] = "role"  # 消息对象中角色字段名
