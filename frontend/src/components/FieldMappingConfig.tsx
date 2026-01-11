@@ -42,6 +42,8 @@ export interface FieldMapping {
   user_role_value?: string
   assistant_role_value?: string
   system_role_value?: string
+
+  image_field?: string | null
 }
 
 export interface ReviewConfig {
@@ -132,6 +134,7 @@ export default function FieldMappingConfig({
       usedFields.add(mapping.context_field)
     if (mapping.messages_field && excludeKey !== 'messages_field')
       usedFields.add(mapping.messages_field)
+    if (mapping.image_field && excludeKey !== 'image_field') usedFields.add(mapping.image_field)
     return detectedFields.filter((f) => !usedFields.has(f))
   }
 
@@ -445,6 +448,24 @@ export default function FieldMappingConfig({
                 style={{ width: '100%' }}
               >
                 {detectedFields.map((f) => (
+                  <Option key={f} value={f}>
+                    {f}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Divider style={{ margin: '12px 0' }}>多模态配置</Divider>
+            <Form.Item label="图片字段/文件夹" style={{ marginBottom: 8 }}>
+              <Select
+                value={mapping.image_field}
+                onChange={(v) => updateMapping('image_field', v)}
+                placeholder="选择图片路径字段"
+                allowClear
+                disabled={readOnly}
+                style={{ width: 200 }}
+              >
+                {getAvailableFields('image_field').map((f) => (
                   <Option key={f} value={f}>
                     {f}
                   </Option>

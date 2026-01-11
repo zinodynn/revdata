@@ -477,6 +477,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
 
   // 快捷键
   const hotkeys = useSettingsStore((state) => state.hotkeys)
+  const theme = useSettingsStore((state) => state.theme)
 
   useHotkeys(hotkeys.prevItem, goPrev, { enabled: !editingField })
   useHotkeys(hotkeys.nextItem, goNext, { enabled: !editingField })
@@ -496,8 +497,15 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     enabled: !editingField && canEdit,
     preventDefault: true,
   })
-  useHotkeys(hotkeys.save, handleSave, { enabled: !!editingField && canEdit, preventDefault: true })
-  useHotkeys(hotkeys.cancel, handleCancel, { enabled: !!editingField })
+  useHotkeys(hotkeys.save, handleSave, {
+    enabled: !!editingField && canEdit,
+    preventDefault: true,
+    enableOnFormTags: true,
+  })
+  useHotkeys(hotkeys.cancel, handleCancel, {
+    enabled: !!editingField,
+    enableOnFormTags: true,
+  })
   useHotkeys('ctrl+g', () => document.getElementById('jump-input')?.focus(), {
     preventDefault: true,
   })
@@ -750,15 +758,17 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         }}
       >
         <Space split="|" wrap>
-          <span>PgUp/PgDn 翻页</span>
-          <span>Ctrl+Enter 通过</span>
-          <span>Ctrl+Shift+Enter 拒绝</span>
-          <span>q 编辑问题</span>
-          <span>a 编辑回答</span>
-          <span>Alt+S 保存</span>
-          <span>Esc 取消</span>
-          <span>Ctrl+G 跳转</span>
-          <span>Ctrl+Shift+N 下一待审</span>
+          <span>
+            {hotkeys.prevItem}/{hotkeys.nextItem} 翻页
+          </span>
+          <span>{hotkeys.approve} 通过</span>
+          <span>{hotkeys.reject} 拒绝</span>
+          <span>{hotkeys.focusQ} 编辑问题</span>
+          <span>{hotkeys.focusA} 编辑回答</span>
+          <span>tab 下一个栏目</span>
+          <span>{hotkeys.save} 保存</span>
+          <span>{hotkeys.cancel} 取消</span>
+          <span>{hotkeys.jumpToNext} 下一待审</span>
         </Space>
       </div>
 
@@ -793,9 +803,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           {currentItem && (
             <QACardUnified
               originalContent={currentItem.original_content}
-              currentContent={editingField ? editingContent : currentItem.current_content}
+              currentContent={editingContent || currentItem.current_content}
               seqNum={currentItem.seq_num}
+              theme={theme}
               fieldMapping={dataset?.field_mapping}
+              datasetSourceFile={dataset?.source_file}
               editingField={editingField}
               onStartEdit={startEdit}
               onContentChange={setEditingContent}
@@ -915,7 +927,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                   loading={saving}
                   disabled={task?.status === 'completed'}
                 >
-                  拒绝 (Ctrl+Shift+Enter)
+                  拒绝 ({hotkeys.reject.toUpperCase()})
                 </Button>
                 <Button
                   size="large"
@@ -925,7 +937,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                   loading={saving}
                   disabled={task?.status === 'completed'}
                 >
-                  通过 (Ctrl+Enter)
+                  通过 ({hotkeys.approve.toUpperCase()})
                 </Button>
               </>
             )

@@ -342,13 +342,13 @@ export default function DatasetsPage() {
               <Upload.Dragger
                 beforeUpload={handleFileSelect}
                 showUploadList={false}
-                accept=".jsonl,.json,.csv,.tsv"
+                accept=".jsonl,.json,.csv,.tsv,.zip"
               >
                 <p className="ant-upload-drag-icon">
                   <UploadOutlined style={{ fontSize: 48, color: '#1890ff' }} />
                 </p>
                 <p className="ant-upload-text">点击或拖拽文件到此处</p>
-                <p className="ant-upload-hint">支持 JSONL、JSON、CSV、TSV 格式</p>
+                <p className="ant-upload-hint">支持 JSONL、JSON、CSV、TSV、ZIP 格式</p>
               </Upload.Dragger>
             )}
           </div>
