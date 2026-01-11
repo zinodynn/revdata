@@ -4,8 +4,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
-from app.api.deps import get_current_admin, get_current_user
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.data_item import DataItem, ItemStatus
 from app.models.task import Task, TaskStatus
@@ -136,6 +137,7 @@ async def list_assigned_by_me_tasks(
 
     result = await db.execute(
         select(Task)
+        .options(joinedload(Task.dataset), joinedload(Task.assignee))
         .where(and_(*conditions))
         .order_by(Task.priority.desc(), Task.created_at.desc())
     )
@@ -145,6 +147,11 @@ async def list_assigned_by_me_tasks(
     task_responses = []
     for task in tasks:
         response = TaskResponse.model_validate(task)
+        if task.dataset:
+            response.dataset_name = task.dataset.name
+        if task.assignee:
+            response.assignee_name = task.assignee.username
+
         if task.item_ids:
             response.total_items = len(task.item_ids)
 

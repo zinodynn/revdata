@@ -12,7 +12,7 @@ const defaultHotkeys = {
   cancel: 'escape',
   focusQ: 'q',
   focusA: 'a',
-  jumpToNext: 'ctrl+shift+n',
+  jumpToNext: 'alt+n',
 }
 
 export type HotkeyConfig = typeof defaultHotkeys

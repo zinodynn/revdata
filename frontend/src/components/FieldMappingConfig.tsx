@@ -11,6 +11,7 @@ import {
   Card,
   Divider,
   Form,
+  Input,
   Radio,
   Select,
   Space,
@@ -34,6 +35,15 @@ export interface FieldMapping {
   metadata_fields: string[]
   display_mode: 'conversation' | 'qa_pair' | 'plain' | 'auto'
   detected_fields: string[]
+
+  // New multi-turn config
+  message_role_field?: string
+  message_content_field?: string
+  user_role_value?: string
+  assistant_role_value?: string
+  system_role_value?: string
+
+  image_field?: string | null
 }
 
 export interface ReviewConfig {
@@ -63,6 +73,11 @@ const defaultMapping: FieldMapping = {
   metadata_fields: [],
   display_mode: 'auto',
   detected_fields: [],
+  message_role_field: 'role',
+  message_content_field: 'content',
+  user_role_value: 'user',
+  assistant_role_value: 'assistant',
+  system_role_value: 'system',
 }
 
 const defaultReviewConfig: ReviewConfig = {
@@ -119,6 +134,7 @@ export default function FieldMappingConfig({
       usedFields.add(mapping.context_field)
     if (mapping.messages_field && excludeKey !== 'messages_field')
       usedFields.add(mapping.messages_field)
+    if (mapping.image_field && excludeKey !== 'image_field') usedFields.add(mapping.image_field)
     return detectedFields.filter((f) => !usedFields.has(f))
   }
 
@@ -366,6 +382,62 @@ export default function FieldMappingConfig({
               </Select>
             </Form.Item>
 
+            {(mapping.display_mode === 'conversation' || mapping.messages_field) && (
+              <Card
+                size="small"
+                type="inner"
+                title="多轮对话详细配置"
+                style={{ marginBottom: 8, background: '#fafafa' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space>
+                    <Form.Item label="角色字段名" style={{ marginBottom: 0 }}>
+                      <Input
+                        value={mapping.message_role_field}
+                        onChange={(e) => updateMapping('message_role_field', e.target.value)}
+                        placeholder="默认为 role"
+                        style={{ width: 120 }}
+                      />
+                    </Form.Item>
+                    <Form.Item label="内容字段名" style={{ marginBottom: 0 }}>
+                      <Input
+                        value={mapping.message_content_field}
+                        onChange={(e) => updateMapping('message_content_field', e.target.value)}
+                        placeholder="默认为 content"
+                        style={{ width: 120 }}
+                      />
+                    </Form.Item>
+                  </Space>
+                  <Space>
+                    <Form.Item label="用户角色值" style={{ marginBottom: 0 }}>
+                      <Input
+                        value={mapping.user_role_value}
+                        onChange={(e) => updateMapping('user_role_value', e.target.value)}
+                        placeholder="默认为 user"
+                        style={{ width: 120 }}
+                      />
+                    </Form.Item>
+                    <Form.Item label="助手角色值" style={{ marginBottom: 0 }}>
+                      <Input
+                        value={mapping.assistant_role_value}
+                        onChange={(e) => updateMapping('assistant_role_value', e.target.value)}
+                        placeholder="默认为 assistant"
+                        style={{ width: 120 }}
+                      />
+                    </Form.Item>
+                    <Form.Item label="系统角色值" style={{ marginBottom: 0 }}>
+                      <Input
+                        value={mapping.system_role_value}
+                        onChange={(e) => updateMapping('system_role_value', e.target.value)}
+                        placeholder="默认为 system"
+                        style={{ width: 120 }}
+                      />
+                    </Form.Item>
+                  </Space>
+                </Space>
+              </Card>
+            )}
+
             <Form.Item label="元数据字段（只读显示）" style={{ marginBottom: 8 }}>
               <Select
                 mode="multiple"
@@ -376,6 +448,24 @@ export default function FieldMappingConfig({
                 style={{ width: '100%' }}
               >
                 {detectedFields.map((f) => (
+                  <Option key={f} value={f}>
+                    {f}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Divider style={{ margin: '12px 0' }}>多模态配置</Divider>
+            <Form.Item label="图片字段/文件夹" style={{ marginBottom: 8 }}>
+              <Select
+                value={mapping.image_field}
+                onChange={(v) => updateMapping('image_field', v)}
+                placeholder="选择图片路径字段"
+                allowClear
+                disabled={readOnly}
+                style={{ width: 200 }}
+              >
+                {getAvailableFields('image_field').map((f) => (
                   <Option key={f} value={f}>
                     {f}
                   </Option>

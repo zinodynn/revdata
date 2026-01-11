@@ -1,6 +1,13 @@
-import { BulbOutlined, EditOutlined, PictureOutlined } from '@ant-design/icons'
+import {
+  BulbOutlined,
+  EditOutlined,
+  LeftOutlined,
+  PictureOutlined,
+  RightOutlined,
+} from '@ant-design/icons'
 import { Button, Collapse, Image, Input, Tag, Typography } from 'antd'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSettingsStore } from '../stores/settingsStore'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -13,6 +20,14 @@ export interface FieldMappingConfig {
   messages_field: string | null
   metadata_fields: string[]
   display_mode: 'conversation' | 'qa_pair' | 'plain' | 'auto'
+  image_field?: string
+
+  // New multi-turn config
+  message_role_field?: string
+  message_content_field?: string
+  user_role_value?: string
+  assistant_role_value?: string
+  system_role_value?: string
 }
 
 interface Message {
@@ -27,6 +42,7 @@ interface QACardUnifiedProps {
   seqNum: number
   theme?: 'light' | 'dark'
   fieldMapping?: FieldMappingConfig
+  datasetSourceFile?: string
   editingField?: string | null // 当前编辑的字段: 'q_0', 'a_0', 'q_1', 'a_1' ...
   onStartEdit?: (field: string) => void
   onContentChange?: (newContent: any) => void
@@ -49,6 +65,7 @@ export default function QACardUnified({
   seqNum,
   theme = 'light',
   fieldMapping,
+  datasetSourceFile,
   editingField,
   onStartEdit,
   onContentChange,
@@ -58,6 +75,14 @@ export default function QACardUnified({
 }: QACardUnifiedProps) {
   const isDark = theme === 'dark'
   const editRef = useRef<HTMLTextAreaElement>(null)
+  const [activeImageIndex, setActiveImageIndex] = useState(0)
+
+  const hotkeys = useSettingsStore((state) => state.hotkeys)
+
+  // 当 seqNum 改变时重置图片索引
+  useEffect(() => {
+    setActiveImageIndex(0)
+  }, [seqNum])
 
   // 解析消息列表
   const parseMessages = (content: any): Message[] => {
@@ -129,19 +154,35 @@ export default function QACardUnified({
     // 优先使用field_mapping
     if (fieldMapping?.messages_field && content[fieldMapping.messages_field]) {
       const msgs = content[fieldMapping.messages_field]
+      const roleKey = fieldMapping.message_role_field || 'role'
+      const contentKey = fieldMapping.message_content_field || 'content'
+      const userVal = fieldMapping.user_role_value || 'user'
+      const assistantVal = fieldMapping.assistant_role_value || 'assistant'
+
       if (Array.isArray(msgs) && msgs.length > 0) {
-        return msgs.map((m: any) => ({
-          role: m.role || 'user',
-          content: String(m.content || ''),
-          images: m.images,
-        }))
+        return msgs.map((m: any, idx: number) => {
+          let r = m[roleKey]
+          if (!r) {
+            // 尝试自动推断
+            r = idx % 2 === 0 ? 'user' : 'assistant'
+          }
+
+          if (r === userVal) r = 'user'
+          else if (r === assistantVal) r = 'assistant'
+
+          return {
+            role: r || 'user',
+            content: String(m[contentKey] || ''),
+            images: m.images,
+          }
+        })
       }
     }
 
     // 默认messages格式
     if (content.messages && Array.isArray(content.messages)) {
-      return content.messages.map((m: any) => ({
-        role: m.role || 'user',
+      return content.messages.map((m: any, idx: number) => ({
+        role: m.role || (idx % 2 === 0 ? 'user' : 'assistant'),
         content: String(m.content || ''),
         images: m.images,
       }))
@@ -292,11 +333,18 @@ export default function QACardUnified({
 
     // 根据原始数据格式更新
     if (fieldMapping?.messages_field && newContent[fieldMapping.messages_field]) {
-      newContent[fieldMapping.messages_field][index].content = newValue
-      onContentChange(newContent)
+      const msgs = newContent[fieldMapping.messages_field]
+      if (Array.isArray(msgs) && msgs[index]) {
+        // 使用配置的 content key，没有配置则默认 "content"
+        const contentKey = fieldMapping.message_content_field || 'content'
+        msgs[index][contentKey] = newValue
+        onContentChange(newContent)
+      }
     } else if (newContent.messages && Array.isArray(newContent.messages)) {
-      newContent.messages[index].content = newValue
-      onContentChange(newContent)
+      if (newContent.messages[index]) {
+        newContent.messages[index].content = newValue
+        onContentChange(newContent)
+      }
     } else if (newContent.conversations && Array.isArray(newContent.conversations)) {
       // ShareGPT格式
       newContent.conversations[index].value = newValue
@@ -466,16 +514,16 @@ export default function QACardUnified({
               icon={<EditOutlined />}
               onClick={() => onStartEdit(fieldKey)}
             >
-              编辑 ({isUser ? 'q' : 'a'})
+              编辑 ({isUser ? hotkeys.focusQ : hotkeys.focusA})
             </Button>
           )}
           {isEditing && (
             <div>
               <Button size="small" type="primary" onClick={onSave} style={{ marginRight: 8 }}>
-                保存 (Alt+S)
+                保存 ({hotkeys.save.toUpperCase()})
               </Button>
               <Button size="small" onClick={onCancel}>
-                取消 (Esc)
+                取消 ({hotkeys.cancel})
               </Button>
             </div>
           )}
@@ -503,12 +551,45 @@ export default function QACardUnified({
         )}
 
         {/* 内容区域 */}
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, width: '100%' }}>
           {isEditing ? (
             <TextArea
               ref={editRef as any}
               value={msg.content}
               onChange={(e) => updateMessageContent(index, msg.role as any, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                  e.preventDefault()
+
+                  // 查找同角色的下一条消息
+                  let nextIdx = -1
+                  for (let i = index + 1; i < currentMessages.length; i++) {
+                    const m = currentMessages[i]
+                    const nextIsUser = m.role === 'user' || m.role === 'human'
+                    if (nextIsUser === isUser) {
+                      nextIdx = i
+                      break
+                    }
+                  }
+
+                  // 如果没找到，循环回到开头
+                  if (nextIdx === -1) {
+                    for (let i = 0; i < index; i++) {
+                      const m = currentMessages[i]
+                      const nextIsUser = m.role === 'user' || m.role === 'human'
+                      if (nextIsUser === isUser) {
+                        nextIdx = i
+                        break
+                      }
+                    }
+                  }
+
+                  if (nextIdx !== -1 && onStartEdit) {
+                    const nextKey = `${isUser ? 'q' : 'a'}_${Math.floor(nextIdx / 2)}`
+                    onStartEdit(nextKey)
+                  }
+                }
+              }}
               autoSize={{ minRows: 4, maxRows: 20 }}
               style={{
                 background: isDark ? '#2a3a4a' : '#fff',
@@ -555,173 +636,336 @@ export default function QACardUnified({
   const context = getContext()
   const thinking = getThinking()
 
-  // 纯文本模式 - 单栏
-  if (isPlainText) {
-    const msg = currentMessages[0]
-    const originalMsg = originalMessages[0]
-    const hasChanges = originalMsg && msg.content !== originalMsg.content
-    const isEditing = editingField === 'q_0'
+  // 解析图片
+  const getImagesInfo = () => {
+    // 1. 从 field_mapping 获取
+    let imageSource = null
+    if (fieldMapping?.image_field && currentContent?.[fieldMapping.image_field]) {
+      imageSource = currentContent[fieldMapping.image_field]
+    }
+    // 2. 自动检测
+    if (!imageSource && typeof currentContent === 'object') {
+      if (currentContent.image) imageSource = currentContent.image
+      else if (currentContent.images) imageSource = currentContent.images
+    }
 
-    return (
-      <div
-        style={{
-          padding: 20,
-          borderRadius: 12,
-          background: isDark ? '#2a2a2a' : '#f5f7fa',
-          border: isEditing
-            ? '2px solid #1890ff'
-            : isDark
-              ? '1px solid #434343'
-              : '1px solid #e8e8e8',
-        }}
-      >
+    if (!imageSource) return null
+
+    const paths = Array.isArray(imageSource) ? imageSource : [imageSource]
+    if (paths.length === 0) return null
+
+    const images = paths
+      .map((path) => {
+        if (typeof path !== 'string') return null
+        let imageUrl = path
+        if (!path.startsWith('http') && !path.startsWith('data:')) {
+          // 相对路径处理
+          if (datasetSourceFile) {
+            const parts = datasetSourceFile.split('/')
+            const baseDir = parts.length > 1 ? parts.slice(0, -1).join('/') : ''
+            const normalizedBase = baseDir.replace(/\\/g, '/')
+            if (normalizedBase) {
+              imageUrl = `/static/${normalizedBase}/${path}`
+            } else {
+              imageUrl = `/static/${path}`
+            }
+          }
+        }
+        return { path, url: imageUrl }
+      })
+      .filter((i): i is { path: string; url: string } => i !== null)
+
+    return images.length > 0 ? images : null
+  }
+
+  const imagesInfo = getImagesInfo()
+
+  // 渲染单个内容区（右侧对话部分）
+  const renderChatArea = () => {
+    // 纯文本模式 - 单栏
+    if (isPlainText) {
+      const msg = currentMessages[0]
+      const originalMsg = originalMessages[0]
+      const hasChanges = originalMsg && msg.content !== originalMsg.content
+      const isEditing = editingField === 'q_0'
+
+      return (
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
+            padding: 20,
+            borderRadius: 12,
+            background: isDark ? '#2a2a2a' : '#f5f7fa',
+            border: isEditing
+              ? '2px solid #1890ff'
+              : isDark
+                ? '1px solid #434343'
+                : '1px solid #e8e8e8',
           }}
         >
-          <div>
-            <Text strong style={{ color: isDark ? '#e8e8e8' : '#333' }}>
-              第 {seqNum} 条
-            </Text>
-            {hasChanges && !isEditing && (
-              <Tag color="blue" style={{ marginLeft: 8 }}>
-                已修改
-              </Tag>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <Text strong style={{ color: isDark ? '#e8e8e8' : '#333' }}>
+                第 {seqNum} 条
+              </Text>
+              {hasChanges && !isEditing && (
+                <Tag color="blue" style={{ marginLeft: 8 }}>
+                  已修改
+                </Tag>
+              )}
+              {isEditing && (
+                <Tag color="orange" style={{ marginLeft: 8 }}>
+                  编辑中
+                </Tag>
+              )}
+            </div>
+            {!readOnly && !isEditing && onStartEdit && (
+              <Button
+                size="small"
+                type="text"
+                icon={<EditOutlined />}
+                onClick={() => onStartEdit('q_0')}
+              >
+                编辑 ({hotkeys.focusQ})
+              </Button>
             )}
             {isEditing && (
-              <Tag color="orange" style={{ marginLeft: 8 }}>
-                编辑中
-              </Tag>
+              <div>
+                <Button size="small" type="primary" onClick={onSave} style={{ marginRight: 8 }}>
+                  保存 ({hotkeys.save.toUpperCase()})
+                </Button>
+                <Button size="small" onClick={onCancel}>
+                  取消 ({hotkeys.cancel})
+                </Button>
+              </div>
             )}
           </div>
-          {!readOnly && !isEditing && onStartEdit && (
-            <Button
-              size="small"
-              type="text"
-              icon={<EditOutlined />}
-              onClick={() => onStartEdit('q_0')}
+
+          {isEditing ? (
+            <TextArea
+              ref={editRef as any}
+              value={msg.content}
+              onChange={(e) => updateMessageContent(0, 'plain', e.target.value)}
+              autoSize={{ minRows: 6, maxRows: 30 }}
+              style={{
+                background: isDark ? '#3a3a3a' : '#fff',
+                color: isDark ? '#e8e8e8' : '#333',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.8,
+                color: isDark ? '#e8e8e8' : '#333',
+              }}
             >
-              编辑 (q)
-            </Button>
-          )}
-          {isEditing && (
-            <div>
-              <Button size="small" type="primary" onClick={onSave} style={{ marginRight: 8 }}>
-                保存
-              </Button>
-              <Button size="small" onClick={onCancel}>
-                取消
-              </Button>
+              {hasChanges && originalMsg
+                ? getInlineDiff(originalMsg.content, msg.content)
+                : msg.content}
             </div>
           )}
         </div>
+      )
+    }
 
-        {isEditing ? (
-          <TextArea
-            ref={editRef as any}
-            value={msg.content}
-            onChange={(e) => updateMessageContent(0, 'plain', e.target.value)}
-            autoSize={{ minRows: 6, maxRows: 30 }}
-            style={{
-              background: isDark ? '#3a3a3a' : '#fff',
-              color: isDark ? '#e8e8e8' : '#333',
-            }}
-          />
-        ) : (
+    return (
+      <div className="qa-card-unified">
+        {/* 上下文 */}
+        {context && (
           <div
-            style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: isDark ? '#e8e8e8' : '#333' }}
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: 8,
+              background: isDark ? '#2a2a3a' : '#f9f0ff',
+              border: isDark ? '1px solid #4a4a5a' : '1px solid #d3adf7',
+            }}
           >
-            {hasChanges && originalMsg
-              ? getInlineDiff(originalMsg.content, msg.content)
-              : msg.content}
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              系统上下文:
+            </Text>
+            <div style={{ marginTop: 4, color: isDark ? '#d0d0d0' : '#531dab', fontSize: 13 }}>
+              {context}
+            </div>
           </div>
         )}
+
+        {/* 思考过程 */}
+        {thinking && (
+          <Collapse
+            ghost
+            style={{ marginBottom: 16 }}
+            items={[
+              {
+                key: 'thinking',
+                label: (
+                  <span style={{ color: isDark ? '#faad14' : '#d48806' }}>
+                    <BulbOutlined /> 思考过程
+                  </span>
+                ),
+                children: (
+                  <div
+                    style={{
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.6,
+                      color: isDark ? '#d0d0d0' : '#666',
+                      fontSize: 13,
+                      background: isDark ? '#2a2820' : '#fffbe6',
+                      padding: 12,
+                      borderRadius: 8,
+                    }}
+                  >
+                    {thinking}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
+
+        {/* 多轮对话 */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {currentMessages.map((msg, idx) => {
+            if (msg.role === 'plain') return null
+
+            const isUser = msg.role === 'user' || msg.role === 'human'
+            const originalMsg = originalMessages[idx]
+
+            return (
+              <div key={idx} style={{ width: '100%', maxWidth: 1000, marginBottom: 12 }}>
+                {renderMessage(msg, originalMsg, idx, isUser)}
+              </div>
+            )
+          })}
+        </div>
       </div>
     )
   }
 
-  return (
-    <div className="qa-card-unified">
-      {/* 上下文 */}
-      {context && (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 8,
-            background: isDark ? '#2a2a3a' : '#f9f0ff',
-            border: isDark ? '1px solid #4a4a5a' : '1px solid #d3adf7',
-          }}
-        >
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            系统上下文:
-          </Text>
-          <div style={{ marginTop: 4, color: isDark ? '#d0d0d0' : '#531dab', fontSize: 13 }}>
-            {context}
+  // 最终渲染 Layout
+  if (imagesInfo) {
+    const currentImage = imagesInfo[activeImageIndex] || imagesInfo[0]
+    return (
+      <div style={{ display: 'flex', gap: 24, paddingBottom: 24 }}>
+        {/* 左侧图片区 - 占据 40% 或 固定宽度 */}
+        <div style={{ flex: '0 0 45%', maxWidth: '800px', minWidth: '300px' }}>
+          <div style={{ position: 'sticky', top: 24, textAlign: 'center' }}>
+            {/* 主图 */}
+            <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+              <Image
+                src={currentImage.url}
+                style={{
+                  maxWidth: '100%',
+                  borderRadius: 8,
+                  maxHeight: '70vh',
+                  objectFit: 'contain',
+                }}
+                fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6UAAABRWlDQ1BJQ0MgUHJvZmlsZQAAKJFjYGASSSwoyGFhYGDIzSspCnJ3UoiIjFJgf8LAwSDCIMogwMCcmFxc4BgQ4ANUwgCjUcG3awyMIPqyLsis7PPOq3QdDFcvjV3jOD1boQVTPQrgSkktTgbSf4A4LbmgqISBgTEFyFYuLykAsTuAbJEioKOA7DkgdjqEvQHEToKwj4DVhAQ5A9k3gGyB5IxEoBmML4BsnSQk8XQkNtReEOBxcfXxUQg1Mjc0dyHgXNJBSWpFCYh2zi+oLMpMzyhRcASGUqqCZ16yno6CkYGRAQMDKMwhqj/fAIcloxgHQqxAjIHBEugw5sUIsSQpBobtQPdLciLEVJYzMPBHMDBsayhILEqEO4DxG0txmrERhM29nYGBddr//5/DGRjYNRkY/l7////39v///y4Dmn+LgesAVQYGAJnkWI0AAAAASUVORK5CYII="
+              />
+              {/* 左右切换按钮 (仅当有多张图时显示) */}
+              {imagesInfo.length > 1 && (
+                <>
+                  <Button
+                    shape="circle"
+                    icon={<LeftOutlined />}
+                    style={{
+                      position: 'absolute',
+                      left: 10,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      zIndex: 10,
+                      opacity: 0.7,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveImageIndex((prev) => (prev === 0 ? imagesInfo.length - 1 : prev - 1))
+                    }}
+                  />
+                  <Button
+                    shape="circle"
+                    icon={<RightOutlined />}
+                    style={{
+                      position: 'absolute',
+                      right: 10,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      zIndex: 10,
+                      opacity: 0.7,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveImageIndex((prev) => (prev === imagesInfo.length - 1 ? 0 : prev + 1))
+                    }}
+                  />
+                </>
+              )}
+            </div>
+
+            <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>
+              {imagesInfo.length > 1 && (
+                <span style={{ marginRight: 8 }}>
+                  ({activeImageIndex + 1}/{imagesInfo.length})
+                </span>
+              )}
+              点击图片查看全图 (来源: {currentImage.path})
+            </div>
+
+            {/* 缩略图列表 */}
+            {imagesInfo.length > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  marginTop: 16,
+                  overflowX: 'auto',
+                  justifyContent: 'center',
+                  padding: '4px',
+                }}
+              >
+                {imagesInfo.map((img, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      border:
+                        idx === activeImageIndex ? '2px solid #1890ff' : '2px solid transparent',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      padding: 2,
+                      opacity: idx === activeImageIndex ? 1 : 0.6,
+                      transition: 'all 0.2s',
+                    }}
+                    onClick={() => setActiveImageIndex(idx)}
+                  >
+                    <img
+                      src={img.url}
+                      alt={`thumbnail-${idx}`}
+                      style={{
+                        width: 60,
+                        height: 60,
+                        objectFit: 'cover',
+                        borderRadius: 4,
+                        display: 'block',
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* 思考过程 */}
-      {thinking && (
-        <Collapse
-          ghost
-          style={{ marginBottom: 16 }}
-          items={[
-            {
-              key: 'thinking',
-              label: (
-                <span style={{ color: isDark ? '#faad14' : '#d48806' }}>
-                  <BulbOutlined /> 思考过程
-                </span>
-              ),
-              children: (
-                <div
-                  style={{
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: 1.6,
-                    color: isDark ? '#d0d0d0' : '#666',
-                    fontSize: 13,
-                    background: isDark ? '#2a2820' : '#fffbe6',
-                    padding: 12,
-                    borderRadius: 8,
-                  }}
-                >
-                  {thinking}
-                </div>
-              ),
-            },
-          ]}
-        />
-      )}
+        {/* 右侧对话区 */}
+        <div style={{ flex: 1 }}>{renderChatArea()}</div>
+      </div>
+    )
+  }
 
-      {/* 多轮对话 */}
-      {currentMessages.map((msg, idx) => {
-        if (msg.role === 'plain') return null
-
-        const isUser = msg.role === 'user' || msg.role === 'human'
-        const originalMsg = originalMessages[idx]
-
-        // 每两条消息(user+assistant)为一轮，左右分栏
-        if (isUser) {
-          const nextMsg = currentMessages[idx + 1]
-          const nextOriginal = originalMessages[idx + 1]
-
-          return (
-            <div key={idx} style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-              {renderMessage(msg, originalMsg, idx, true)}
-              {nextMsg && renderMessage(nextMsg, nextOriginal, idx + 1, false)}
-            </div>
-          )
-        }
-
-        // assistant消息已在上面处理
-        return null
-      })}
-    </div>
-  )
+  return renderChatArea()
 }

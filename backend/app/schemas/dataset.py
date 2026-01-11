@@ -24,6 +24,15 @@ class FieldMapping(BaseModel):
     thinking_field: Optional[str] = None  # 思考过程字段
     context_field: Optional[str] = None  # 上下文/系统提示字段
     messages_field: Optional[str] = None  # 对话消息数组字段
+    image_field: Optional[str] = None  # 图片字段 (相对路径)
+
+    # 多轮对话字段配置
+    message_role_field: Optional[str] = "role"  # 消息对象中角色字段名
+    message_content_field: Optional[str] = "content"  # 消息对象中内容字段名
+    user_role_value: Optional[str] = "user"  # 用户角色的值
+    assistant_role_value: Optional[str] = "assistant"  # 助手角色的值
+    system_role_value: Optional[str] = "system"  # 系统角色的值
+
     metadata_fields: List[str] = []  # 元数据字段列表
     display_mode: DisplayMode = DisplayMode.AUTO
     detected_fields: List[str] = []  # 系统检测到的所有字段
