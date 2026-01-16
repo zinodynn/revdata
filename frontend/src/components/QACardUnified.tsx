@@ -21,6 +21,7 @@ export interface FieldMappingConfig {
   metadata_fields: string[]
   display_mode: 'conversation' | 'qa_pair' | 'plain' | 'auto'
   image_field?: string
+  text_field?: string | null
 
   // New multi-turn config
   message_role_field?: string
@@ -90,7 +91,7 @@ export default function QACardUnified({
     try {
       console.debug(
         '[QACardUnified] parseMessages content keys',
-        content && typeof content === 'object' ? Object.keys(content) : typeof content,
+        content && typeof content === 'object' ? Object.keys(content) : typeof content
       )
       ;(window as any).__revdata_debug_logs = (window as any).__revdata_debug_logs || []
       ;(window as any).__revdata_debug_logs.push({
@@ -122,31 +123,33 @@ export default function QACardUnified({
       if (nf.question_field)
         nf.question_field = String(nf.question_field).replace(
           /^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g,
-          '',
+          ''
         )
       if (nf.answer_field)
         nf.answer_field = String(nf.answer_field).replace(
           /^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g,
-          '',
+          ''
         )
       if (nf.messages_field)
         nf.messages_field = String(nf.messages_field).replace(
           /^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g,
-          '',
+          ''
         )
       if (nf.context_field)
         nf.context_field = String(nf.context_field).replace(
           /^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g,
-          '',
+          ''
         )
       if (nf.thinking_field)
         nf.thinking_field = String(nf.thinking_field).replace(
           /^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g,
-          '',
+          ''
         )
+      if (nf.text_field)
+        nf.text_field = String(nf.text_field).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
       if (nf.metadata_fields && Array.isArray(nf.metadata_fields))
         nf.metadata_fields = nf.metadata_fields.map((m: string) =>
-          String(m).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, ''),
+          String(m).replace(/^\uFEFF+|^\u200b+|^\u200e+|^\u200f+/g, '')
         )
       normalizedFieldMapping = nf
     }
@@ -176,6 +179,22 @@ export default function QACardUnified({
             images: m.images,
           }
         })
+      }
+    }
+
+    // 纯文本模式强制处理
+    if (fieldMapping?.display_mode === 'plain') {
+      // 优先使用配置的纯文本字段
+      const textKey = normalizedFieldMapping?.text_field
+      let text = textKey ? content[textKey] : undefined
+
+      // 如果没有配置或找不到，尝试默认字段
+      if (!text) {
+        text = content.text || content.content || (typeof content === 'string' ? content : '')
+      }
+
+      if (text) {
+        return [{ role: 'plain', content: String(text) }]
       }
     }
 
@@ -259,11 +278,11 @@ export default function QACardUnified({
 
   const originalMessages = useMemo(
     () => parseMessages(originalContent),
-    [originalContent, fieldMapping],
+    [originalContent, fieldMapping]
   )
   const currentMessages = useMemo(
     () => parseMessages(currentContent),
-    [currentContent, fieldMapping],
+    [currentContent, fieldMapping]
   )
 
   // debug parsed messages
@@ -302,7 +321,7 @@ export default function QACardUnified({
         editRef.current.focus()
         editRef.current.setSelectionRange(
           editRef.current.value.length,
-          editRef.current.value.length,
+          editRef.current.value.length
         )
       } catch (e) {
         console.error('[QACardUnified] focus/edit setSelectionRange error', e, {
@@ -324,7 +343,7 @@ export default function QACardUnified({
   const updateMessageContent = (
     index: number,
     _role: 'user' | 'assistant' | 'plain',
-    newValue: string,
+    newValue: string
   ) => {
     if (!onContentChange || !currentContent) return
 
@@ -350,6 +369,26 @@ export default function QACardUnified({
       newContent.conversations[index].value = newValue
       onContentChange(newContent)
     } else {
+      // 纯文本模式
+      if (fieldMapping?.display_mode === 'plain') {
+        if (typeof newContent === 'string') {
+          onContentChange(newValue)
+          return
+        }
+
+        const textField = fieldMapping.text_field
+        if (textField) {
+          newContent[textField] = newValue
+        } else {
+          // 默认字段逻辑
+          if (newContent.text !== undefined) newContent.text = newValue
+          else if (newContent.content !== undefined) newContent.content = newValue
+          else newContent.text = newValue // Default to creating 'text' field
+        }
+        onContentChange(newContent)
+        return
+      }
+
       // QA对格式 - 根据index判断是Q还是A
       const isQuestion = index === 0
       if (isQuestion) {
@@ -427,7 +466,7 @@ export default function QACardUnified({
           }}
         >
           {original.substring(i, oi + 1)}
-        </span>,
+        </span>
       )
     }
 
@@ -442,7 +481,7 @@ export default function QACardUnified({
           }}
         >
           {current.substring(i, ci + 1)}
-        </span>,
+        </span>
       )
     }
 
@@ -459,7 +498,7 @@ export default function QACardUnified({
     msg: Message,
     originalMsg: Message | undefined,
     index: number,
-    isUser: boolean,
+    isUser: boolean
   ) => {
     const fieldKey = `${isUser ? 'q' : 'a'}_${Math.floor(index / 2)}`
     const isEditing = editingField === fieldKey

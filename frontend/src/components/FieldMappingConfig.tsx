@@ -44,6 +44,7 @@ export interface FieldMapping {
   system_role_value?: string
 
   image_field?: string | null
+  text_field?: string | null
 }
 
 export interface ReviewConfig {
@@ -135,6 +136,7 @@ export default function FieldMappingConfig({
     if (mapping.messages_field && excludeKey !== 'messages_field')
       usedFields.add(mapping.messages_field)
     if (mapping.image_field && excludeKey !== 'image_field') usedFields.add(mapping.image_field)
+    if (mapping.text_field && excludeKey !== 'text_field') usedFields.add(mapping.text_field)
     return detectedFields.filter((f) => !usedFields.has(f))
   }
 
@@ -289,7 +291,6 @@ export default function FieldMappingConfig({
             >
               <Radio.Button value="auto">自动检测</Radio.Button>
               <Radio.Button value="conversation">对话模式</Radio.Button>
-              <Radio.Button value="qa_pair">问答对模式</Radio.Button>
               <Radio.Button value="plain">纯文本模式</Radio.Button>
             </Radio.Group>
           </Form.Item>
@@ -297,6 +298,23 @@ export default function FieldMappingConfig({
           <Divider style={{ margin: '12px 0' }}>主要字段</Divider>
 
           <Space style={{ width: '100%' }} direction="vertical">
+            <Form.Item label="纯文本内容字段 (纯文本模式)" style={{ marginBottom: 8 }}>
+              <Select
+                value={mapping.text_field}
+                onChange={(v) => updateMapping('text_field', v)}
+                placeholder="选择文本字段"
+                allowClear
+                disabled={readOnly}
+                style={{ width: 200 }}
+              >
+                {getAvailableFields('text_field').map((f) => (
+                  <Option key={f} value={f}>
+                    {f}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
             <Form.Item label="问题/用户输入字段" style={{ marginBottom: 8 }}>
               <Select
                 value={mapping.question_field}
