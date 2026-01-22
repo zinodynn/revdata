@@ -74,7 +74,7 @@ export default function PureReviewPage() {
         setLoading(false)
       }
     },
-    [datasetId],
+    [datasetId]
   )
 
   useEffect(() => {
@@ -245,6 +245,7 @@ export default function PureReviewPage() {
               <QACardUnified
                 originalContent={currentItem.original_content}
                 currentContent={editingField ? editingContent : currentItem.current_content}
+                datasetSourceFile={dataset?.source_file}
                 seqNum={currentItem.seq_num}
                 theme={appTheme}
                 fieldMapping={dataset?.field_mapping}

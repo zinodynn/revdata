@@ -20,6 +20,7 @@ const { Title, Text } = Typography
 interface AuthSession {
   valid: boolean
   dataset_id: number
+  dataset_source_file?: string
   item_start: number
   item_end: number
   item_ids?: number[]
@@ -71,7 +72,6 @@ export default function AuthReviewPage() {
           } else {
             setTotalItems(res.data.item_end - res.data.item_start + 1)
           }
-          setTotalItems(res.data.item_end - res.data.item_start + 1)
           // 存储session到sessionStorage
           sessionStorage.setItem(`auth_session_${code}`, JSON.stringify(res.data))
         } else {
@@ -587,6 +587,7 @@ export default function AuthReviewPage() {
               <QACardUnified
                 originalContent={currentItem.original_content}
                 currentContent={editingField ? editingContent : currentItem.current_content}
+                datasetSourceFile={session?.dataset_source_file}
                 seqNum={currentItem.seq_num}
                 theme={appTheme}
                 editingField={editingField}

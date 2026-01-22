@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.auth_code import AuthCode, AuthCodeReviewedItem, AuthCodeSession
+from app.models.dataset import Dataset
 from app.models.user import User
 from app.schemas.auth_code import (
     AuthCodeCreate,
@@ -142,9 +143,14 @@ async def verify_auth_code(
     except Exception:
         pass
 
+    dataset_res = await db.execute(select(Dataset).where(Dataset.id == auth_code.dataset_id))
+    dataset = dataset_res.scalar_one_or_none()
+    dataset_source_file = dataset.source_file if dataset else None
+
     return AuthCodeVerifyResponse(
         valid=True,
         dataset_id=auth_code.dataset_id,
+        dataset_source_file=dataset_source_file,
         item_start=auth_code.item_start,
         item_end=auth_code.item_end,
         item_ids=auth_code.item_ids,

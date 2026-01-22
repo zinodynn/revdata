@@ -45,6 +45,7 @@ class AuthCodeVerifyResponse(BaseModel):
     valid: bool
     message: Optional[str] = None
     dataset_id: Optional[int] = None
+    dataset_source_file: Optional[str] = None
     item_start: Optional[int] = None
     item_end: Optional[int] = None
     item_ids: Optional[List[int]] = None
