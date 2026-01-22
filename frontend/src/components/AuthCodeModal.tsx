@@ -134,7 +134,9 @@ export default function AuthCodeModal({
       message.success(`授权码已创建: ${res.data.code}`)
 
       // 复制授权码
-      const codeUrl = `${window.location.origin}/auth/${res.data.code}`
+      const prefix =
+        import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+      const codeUrl = `${window.location.origin}${prefix}/auth/${res.data.code}`
       navigator.clipboard.writeText(codeUrl)
       message.info('授权链接已复制到剪贴板')
 
@@ -159,7 +161,9 @@ export default function AuthCodeModal({
   }
 
   const copyCode = (code: string) => {
-    const url = `${window.location.origin}/auth/${code}`
+    const prefix =
+      import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+    const url = `${window.location.origin}${prefix}/auth/${code}`
     navigator.clipboard.writeText(url)
     message.success('授权链接已复制')
   }

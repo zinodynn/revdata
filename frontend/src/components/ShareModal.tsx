@@ -83,7 +83,9 @@ export default function ShareModal({ open, onClose, datasetId }: ShareModalProps
       message.success('创建成功')
 
       // 复制链接到剪贴板
-      const shareUrl = `${window.location.origin}/share/${res.data.token}`
+      const prefix =
+        import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+      const shareUrl = `${window.location.origin}${prefix}/share/${res.data.token}`
       navigator.clipboard.writeText(shareUrl)
       message.info('链接已复制到剪贴板')
 

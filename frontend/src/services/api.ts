@@ -39,7 +39,7 @@ export default api
 
 // 无认证API实例 - 用于授权码等公开访问
 const publicApi = axios.create({
-  baseURL: '/api/v1',
+  baseURL: `${baseUrl}/api/v1`,
   timeout: 30000,
 })
 
