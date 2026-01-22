@@ -23,10 +23,18 @@ async def lifespan(app: FastAPI):
     # 关闭时清理资源
 
 
+# 获取 root_path 并确保其格式正确（以 / 开头，不以 / 结尾）
+root_path = settings.ROOT_PATH if settings.ROOT_PATH else ""
+if root_path == "/":
+    root_path = ""
+elif root_path.endswith("/"):
+    root_path = root_path[:-1]
+
 app = FastAPI(
     title=settings.APP_NAME,
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     lifespan=lifespan,
+    root_path=root_path,
 )
 
 # CORS配置

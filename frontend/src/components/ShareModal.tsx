@@ -107,7 +107,9 @@ export default function ShareModal({ open, onClose, datasetId }: ShareModalProps
   }
 
   const copyLink = (token: string) => {
-    const url = `${window.location.origin}/share/${token}`
+    const prefix =
+      import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+    const url = `${window.location.origin}${prefix}/share/${token}`
     navigator.clipboard.writeText(url)
     message.success('链接已复制')
   }

@@ -113,7 +113,9 @@ export default function AuthReviewPage() {
         const data = JSON.stringify({
           session_token: sessionRef.current.session_token,
         })
-        navigator.sendBeacon('/api/v1/auth-codes/session/leave', data)
+        const prefix =
+          import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+        navigator.sendBeacon(`${prefix}/api/v1/auth-codes/session/leave`, data)
       }
     }
 
@@ -186,7 +188,7 @@ export default function AuthReviewPage() {
                 retryRes = await publicItemsApi.getBySeq(
                   verifyRes.data.dataset_id,
                   seqNum,
-                  verifyRes.data.session_token,
+                  verifyRes.data.session_token
                 )
               }
 
@@ -215,7 +217,7 @@ export default function AuthReviewPage() {
         setLoading(false)
       }
     },
-    [session, code],
+    [session, code]
   )
 
   useEffect(() => {
@@ -255,7 +257,7 @@ export default function AuthReviewPage() {
       await publicItemsApi.update(
         currentItem.id,
         { current_content: editingContent },
-        session.session_token,
+        session.session_token
       )
 
       // 记录授权审核
@@ -287,7 +289,7 @@ export default function AuthReviewPage() {
             await publicItemsApi.update(
               currentItem.id,
               { current_content: editingContent },
-              verifyRes.data.session_token,
+              verifyRes.data.session_token
             )
             if (code) {
               await authCodeApi

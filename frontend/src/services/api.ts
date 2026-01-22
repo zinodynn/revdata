@@ -1,8 +1,11 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 
+export const baseUrl =
+  import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: `${baseUrl}/api/v1`,
   timeout: 30000,
 })
 
@@ -26,7 +29,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().logout()
-      window.location.href = '/login'
+      window.location.href = `${baseUrl}/login`
     }
     return Promise.reject(error)
   }

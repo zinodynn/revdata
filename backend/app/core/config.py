@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Review Dataset Platform"
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
+    ROOT_PATH: str = ""
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/revdata"

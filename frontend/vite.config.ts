@@ -3,6 +3,7 @@ import path from 'path'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  base: process.env.VITE_APP_BASE_URL || '/',
   plugins: [react()],
   resolve: {
     alias: {

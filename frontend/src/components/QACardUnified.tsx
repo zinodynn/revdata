@@ -703,10 +703,12 @@ export default function QACardUnified({
             const parts = datasetSourceFile.split('/')
             const baseDir = parts.length > 1 ? parts.slice(0, -1).join('/') : ''
             const normalizedBase = baseDir.replace(/\\/g, '/')
+            const prefix =
+              import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
             if (normalizedBase) {
-              imageUrl = `/static/${normalizedBase}/${path}`
+              imageUrl = `${prefix}/static/${normalizedBase}/${path}`
             } else {
-              imageUrl = `/static/${path}`
+              imageUrl = `${prefix}/static/${path}`
             }
           }
         }
