@@ -6,13 +6,13 @@ import uuid
 import zipfile
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.models.data_item import DataItem, ItemStatus, ItemType
 from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
 from app.models.task import Task
@@ -187,19 +187,20 @@ def normalize_content(content: dict, item_type: ItemType) -> dict:
     "/upload", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED
 )
 async def upload_dataset(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     name: str = Form(...),
     description: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """上传并导入数据集"""
+    """上传并导入数据集 (异步处理)"""
     # 检测文件格式
     filename = file.filename.lower()
     is_zip = filename.endswith(".zip")
 
     if is_zip:
-        format_type = DatasetFormat.JSONL  # 默认为JSONL,稍后检测
+        format_type = DatasetFormat.JSONL  # 默认先占位,稍后通过内容确认
     elif filename.endswith(".jsonl"):
         format_type = DatasetFormat.JSONL
     elif filename.endswith(".json"):
@@ -214,66 +215,30 @@ async def upload_dataset(
             detail="不支持的文件格式,请上传 JSONL, JSON, CSV, TSV 或 ZIP 文件",
         )
 
-    # 1. 保存文件到磁盘
+    # 1. 保存文件到磁盘 (分块写入)
     upload_id = str(uuid.uuid4())
     save_dir = os.path.join(settings.UPLOAD_DIR, upload_id)
     os.makedirs(save_dir, exist_ok=True)
 
     file_path = os.path.join(save_dir, file.filename)
+    
+    # 使用 chunk 写入, 避免内存溢出
     with open(file_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
-
-    # 2. 如果是zip,解压并寻找数据文件
-    data_file_path = file_path
-    if is_zip:
-        extract_dir = save_dir
-        with zipfile.ZipFile(file_path, "r") as zip_ref:
-            zip_ref.extractall(extract_dir)
-
-        # 寻找数据文件
-        found = False
-        for root, dirs, files in os.walk(extract_dir):
-            for f in files:
-                if f.endswith(".jsonl"):
-                    data_file_path = os.path.join(root, f)
-                    format_type = DatasetFormat.JSONL
-                    found = True
-                    break
-                elif f.endswith(".json") and not f.endswith("package.json"):  # 简单排除
-                    data_file_path = os.path.join(root, f)
-                    format_type = DatasetFormat.JSON
-                    found = True
-                    break
-            if found:
+        while True:
+            chunk = await file.read(1024 * 1024 * 10) # 10MB chunks
+            if not chunk:
                 break
+            buffer.write(chunk)
 
-        if not found:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="ZIP包中未找到支持的数据文件(.jsonl/.json)",
-            )
-
-    # 计算相对路径用于 source_file (用于API返回给前端拼接URL)
-    # relative_path = os.path.relpath(data_file_path, settings.UPLOAD_DIR)
-    # 实际上我们需要返回的是包含该文件的目录的相对路径，或者直接是文件路径
-    # 前端需要的是: base_url + image_path
-    # 图片路径通常是相对于jsonl文件的。
-    # 比如 jsonl 在 uploads/uuid/data.jsonl, 图片在 uploads/uuid/images/1.jpg
-    # jsonl 内容是 "image": "images/1.jpg"
-    # 那么前端拼接: /static/uuid/images/1.jpg
-    # 所以我们需要存储 uuid 或 relative dir
-
-    relative_path = os.path.relpath(data_file_path, settings.UPLOAD_DIR).replace(
-        "\\", "/"
-    )
+    # 简单设置 initial source_file, 后台任务会更新为解压后的文件路径
+    relative_path = os.path.relpath(file_path, settings.UPLOAD_DIR).replace("\\", "/")
 
     # 创建数据集记录
     dataset = Dataset(
         name=name,
         description=description,
         format=format_type,
-        source_file=relative_path,  # 存储相对路径 e.g. "uuid/data.jsonl"
+        source_file=relative_path,
         owner_id=current_user.id,
         status=DatasetStatus.IMPORTING,
     )
@@ -281,64 +246,125 @@ async def upload_dataset(
     await db.commit()
     await db.refresh(dataset)
 
-    # 读取并解析文件内容
-    items = []
-
-    try:
-        # 重新读取数据文件内容
-        with open(data_file_path, "r", encoding="utf-8") as f:
-            if format_type == DatasetFormat.JSONL:
-                for line in f:
-                    if line.strip():
-                        items.append(json.loads(line))
-
-            elif format_type == DatasetFormat.JSON:
-                data = json.load(f)
-                if isinstance(data, list):
-                    items = data
-                else:
-                    items = [data]
-
-            elif format_type in [DatasetFormat.CSV, DatasetFormat.TSV]:
-                delimiter = "," if format_type == DatasetFormat.CSV else "\t"
-                reader = csv.DictReader(f, delimiter=delimiter)
-                items = [dict(row) for row in reader]
-
-    except Exception as e:
-        # 解析失败,删除数据集
-        await db.delete(dataset)
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"文件解析失败: {str(e)}"
-        )
-
-    items = [normalize_json_keys(it) for it in items]
-
-    # 检测字段并生成建议映射
-    detected_fields, suggested_mapping = detect_fields_from_content(items)
-    dataset.field_mapping = suggested_mapping.model_dump()
-
-    # 创建数据项 - 保存原始内容（已规范化）
-    for seq_num, item_content in enumerate(items, start=1):
-        item_type = detect_item_type(item_content)
-
-        data_item = DataItem(
-            dataset_id=dataset.id,
-            seq_num=seq_num,
-            item_type=item_type,
-            original_content=item_content,  # 保存原始内容
-            current_content=item_content,  # 保存原始内容
-            status=ItemStatus.PENDING,
-        )
-        db.add(data_item)
-
-    # 更新数据集状态
-    dataset.item_count = len(items)
-    dataset.status = DatasetStatus.READY
-    await db.commit()
-    await db.refresh(dataset)
+    # 添加后台任务
+    background_tasks.add_task(
+        process_dataset_import, dataset.id, file_path, is_zip, format_type
+    )
 
     return dataset
+
+
+async def process_dataset_import(
+    dataset_id: int, file_path: str, is_zip: bool, format_type: DatasetFormat
+):
+    """
+    后台处理数据集导入任务
+    """
+    import asyncio
+    
+    async with AsyncSessionLocal() as db:
+        try:
+            # 获取数据集
+            result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+            dataset = result.scalar_one_or_none()
+            if not dataset:
+                return
+
+            # 2. 如果是zip,解压并寻找数据文件
+            data_file_path = file_path
+            save_dir = os.path.dirname(file_path)
+
+            if is_zip:
+                extract_dir = save_dir
+                
+                def unzip_file():
+                    with zipfile.ZipFile(file_path, "r") as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                
+                await asyncio.to_thread(unzip_file)
+
+                # 寻找数据文件
+                found = False
+                for root, dirs, files in os.walk(extract_dir):
+                    for f in files:
+                        if f.endswith(".jsonl"):
+                            data_file_path = os.path.join(root, f)
+                            format_type = DatasetFormat.JSONL
+                            found = True
+                            break
+                        elif f.endswith(".json") and not f.endswith("package.json"):
+                            data_file_path = os.path.join(root, f)
+                            format_type = DatasetFormat.JSON
+                            found = True
+                            break
+                    if found:
+                        break
+
+                if not found:
+                    raise Exception("ZIP包中未找到支持的数据文件(.jsonl/.json)")
+
+            # 更新 source_file (存储相对路径)
+            relative_path = os.path.relpath(data_file_path, settings.UPLOAD_DIR).replace(
+                "\\", "/"
+            )
+            dataset.source_file = relative_path
+            dataset.format = format_type
+
+            # 读取并解析文件内容
+            items = []
+            
+            def read_content():
+                read_items = []
+                with open(data_file_path, "r", encoding="utf-8") as f:
+                    if format_type == DatasetFormat.JSONL:
+                        for line in f:
+                            if line.strip():
+                                read_items.append(json.loads(line))
+                    elif format_type == DatasetFormat.JSON:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            read_items = data
+                        else:
+                            read_items = [data]
+                return read_items
+
+            items = await asyncio.to_thread(read_content)
+
+            items = [normalize_json_keys(it) for it in items]
+
+            # 检测字段并生成建议映射
+            detected_fields, suggested_mapping = detect_fields_from_content(items)
+            dataset.field_mapping = suggested_mapping.model_dump()
+
+            # 创建数据项
+            # 分批写入
+            batch_size = 1000
+            for i in range(0, len(items), batch_size):
+                batch = items[i : i + batch_size]
+                for seq_offset, item_content in enumerate(batch):
+                    item_type = detect_item_type(item_content)
+                    data_item = DataItem(
+                        dataset_id=dataset.id,
+                        seq_num=i + seq_offset + 1,
+                        item_type=item_type,
+                        original_content=item_content,
+                        current_content=item_content,
+                        status=ItemStatus.PENDING,
+                    )
+                    db.add(data_item)
+                await db.commit()
+
+            # 更新数据集状态
+            dataset.item_count = len(items)
+            dataset.status = DatasetStatus.READY
+            await db.commit()
+            
+        except Exception as e:
+            print(f"Error processing dataset {dataset_id}: {e}")
+            await db.rollback()
+            await db.delete(dataset)
+            await db.commit()
+
 
 
 @router.get("", response_model=DatasetListResponse)

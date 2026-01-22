@@ -17,7 +17,7 @@ api.interceptors.request.use(
   },
   (error) => {
     return Promise.reject(error)
-  },
+  }
 )
 
 // 响应拦截器 - 处理错误
@@ -29,7 +29,7 @@ api.interceptors.response.use(
       window.location.href = '/login'
     }
     return Promise.reject(error)
-  },
+  }
 )
 
 export default api
@@ -43,7 +43,7 @@ const publicApi = axios.create({
 // 公开API不自动跳转登录
 publicApi.interceptors.response.use(
   (response) => response,
-  (error) => Promise.reject(error),
+  (error) => Promise.reject(error)
 )
 
 // Auth API
@@ -77,7 +77,7 @@ export const datasetsApi = {
       review_config?: any
       status?: string
       owner_id?: number
-    },
+    }
   ) => api.put(`/datasets/${id}`, data),
   transferAll: (fromUserId: number, toUserId: number) =>
     api.post('/datasets/transfer-all', null, {
@@ -89,7 +89,9 @@ export const datasetsApi = {
     formData.append('file', file)
     formData.append('name', name)
     if (description) formData.append('description', description)
-    return api.post('/datasets/upload', formData)
+    return api.post('/datasets/upload', formData, {
+      timeout: 30 * 60 * 1000, // 30 minutes for large uploads
+    })
   },
   preview: (id: number, count = 5) => api.get(`/datasets/${id}/preview`, { params: { count } }),
   detectFields: (file: File) => {
@@ -107,7 +109,7 @@ export const itemsApi = {
     pageSize = 20,
     statusFilter?: string,
     isMarked?: boolean,
-    taskId?: number,
+    taskId?: number
   ) =>
     api.get(`/items/dataset/${datasetId}`, {
       params: {
@@ -123,7 +125,7 @@ export const itemsApi = {
     api.get(`/items/dataset/${datasetId}/seq/${seqNum}`),
   update: (
     id: number,
-    data: { current_content: any; status?: string; comment?: string; is_marked?: boolean },
+    data: { current_content: any; status?: string; comment?: string; is_marked?: boolean }
   ) => api.put(`/items/${id}`, data),
   approve: (id: number) => api.post(`/items/${id}/approve`),
   reject: (id: number) => api.post(`/items/${id}/reject`),
@@ -163,7 +165,7 @@ export const shareApi = {
 export const exportApi = {
   download: (
     datasetId: number,
-    options: { format: string; status_filter?: string; include_original?: boolean },
+    options: { format: string; status_filter?: string; include_original?: boolean }
   ) =>
     api.get(`/export/${datasetId}`, {
       params: options,
@@ -179,7 +181,7 @@ export const usersApi = {
     api.post('/users', data),
   update: (
     id: number,
-    data: { username?: string; email?: string; role?: string; is_active?: boolean },
+    data: { username?: string; email?: string; role?: string; is_active?: boolean }
   ) => api.put(`/users/${id}`, data),
   delete: (id: number) => api.delete(`/users/${id}`),
   resetPassword: (id: number) => api.post(`/users/${id}/reset-password`),
