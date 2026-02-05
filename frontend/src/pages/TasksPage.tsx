@@ -112,8 +112,8 @@ export default function TasksPage() {
   // 进入纯净审核页面
   const startReview = (task: Task) => {
     // 传入 taskId 以便 ReviewPageV2 进行任务范围过滤
-    // 同时传入 seq=1 作为初始位置 (相对于任务的索引)
-    navigate(`/datasets/${task.dataset_id}/review?taskId=${task.id}&seq=1`)
+    // 不透传 seq，让 ReviewPageV2 自动跳转到第一条待审核或上次进度
+    navigate(`/datasets/${task.dataset_id}/review?taskId=${task.id}`)
   }
 
   // 预览已完成任务（派发者查看）
