@@ -98,16 +98,16 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     setLocalHotkeys({
       nextItem: 'PageDown',
       prevItem: 'PageUp',
-      approve: 'ctrl+enter',
-      reject: 'ctrl+shift+enter',
+      approve: 'enter',
+      reject: 'shift+enter',
       edit: 'ctrl+e',
       save: 'alt+s',
       cancel: 'escape',
       focusQ: 'q',
       focusA: 'a',
-      jumpToNext: 'ctrl+shift+n',
+      jumpToNext: 'alt+n',
     })
-    message.success('已恢复默认设置')
+    message.success('快捷键已重置为默认值')
   }
 
   const tabItems = [

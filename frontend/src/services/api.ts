@@ -68,8 +68,8 @@ export const authApi = {
 
 // Datasets API
 export const datasetsApi = {
-  list: (page = 1, pageSize = 20) =>
-    api.get('/datasets', { params: { page, page_size: pageSize } }),
+  list: (page = 1, pageSize = 20, folderId?: number | null) =>
+    api.get('/datasets', { params: { page, page_size: pageSize, folder_id: folderId } }),
   get: (id: number) => api.get(`/datasets/${id}`),
   update: (
     id: number,
@@ -87,6 +87,8 @@ export const datasetsApi = {
       params: { from_user_id: fromUserId, to_user_id: toUserId },
     }),
   delete: (id: number) => api.delete(`/datasets/${id}`),
+  move: (id: number, folderId: number | null) =>
+    api.put(`/datasets/${id}/move`, { folder_id: folderId }),
   upload: (file: File, name: string, description?: string) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -236,4 +238,15 @@ export const publicItemsApi = {
     publicApi.post(`/items/${id}/reject`, null, {
       params: sessionToken ? { session_token: sessionToken } : {},
     }),
+}
+
+// Folders API (目录管理)
+export const foldersApi = {
+  list: () => api.get('/folders'),
+  get: (id: number) => api.get(`/folders/${id}`),
+  create: (data: { name: string; parent_id?: number | null }) => api.post('/folders', data),
+  update: (id: number, data: { name: string }) => api.put(`/folders/${id}`, data),
+  delete: (id: number) => api.delete(`/folders/${id}`),
+  move: (id: number, parentId: number | null) =>
+    api.put(`/folders/${id}/move`, { parent_id: parentId }),
 }

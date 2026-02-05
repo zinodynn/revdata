@@ -55,3 +55,6 @@ class User(Base):
     created_auth_codes = relationship(
         "AuthCode", back_populates="creator", cascade="all, delete-orphan"
     )
+    folders = relationship(
+        "Folder", back_populates="owner", cascade="all, delete-orphan"
+    )

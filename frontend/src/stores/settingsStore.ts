@@ -5,8 +5,8 @@ import { persist } from 'zustand/middleware'
 const defaultHotkeys = {
   nextItem: 'PageDown',
   prevItem: 'PageUp',
-  approve: 'ctrl+enter',
-  reject: 'ctrl+shift+enter',
+  approve: 'enter',
+  reject: 'shift+enter',
   edit: 'ctrl+e',
   save: 'alt+s',
   cancel: 'escape',

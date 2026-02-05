@@ -12,6 +12,7 @@ import {
 import {
   Button,
   Card,
+  ConfigProvider,
   Dropdown,
   InputNumber,
   Space,
@@ -19,6 +20,7 @@ import {
   Statistic,
   Tag,
   Typography,
+  theme as antdTheme,
   message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
@@ -31,6 +33,7 @@ import MarkedItemsModal from '../components/MarkedItemsModal'
 import QACardUnified from '../components/QACardUnified'
 import ShareModal from '../components/ShareModal'
 import { datasetsApi, itemsApi, tasksApi } from '../services/api'
+import { useProgressStore } from '../stores/progressStore'
 import { useSettingsStore } from '../stores/settingsStore'
 
 const { Title, Text } = Typography
@@ -64,6 +67,31 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const { datasetId } = useParams<{ datasetId: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+
+  // 进度记忆
+  const { setProgress, getProgress } = useProgressStore()
+
+  // Theme support
+  const appTheme = useSettingsStore((state) => state.theme)
+  const isDark = appTheme === 'dark'
+
+  const darkTheme = {
+    algorithm: antdTheme.darkAlgorithm,
+    token: {
+      colorPrimary: '#1890ff',
+      colorBgContainer: '#1f1f1f',
+      colorBgLayout: '#141414',
+      colorText: '#e8e8e8',
+      colorBorder: '#434343',
+    },
+  }
+
+  const lightTheme = {
+    algorithm: antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: '#1890ff',
+    },
+  }
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -159,6 +187,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           setCurrentIndex(index)
           setEditingContent(JSON.parse(JSON.stringify(normalized.current_content)))
           setEditingField(null)
+          // 保存进度
+          const taskId = searchParams.get('taskId')
+          if (datasetId) {
+            setProgress(datasetId, taskId, index)
+          }
         }
       } catch (error) {
         message.error('获取语料失败')
@@ -166,13 +199,20 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         setLoading(false)
       }
     },
-    [datasetId],
+    [datasetId, searchParams, setProgress],
   )
 
   useEffect(() => {
     const seq = searchParams.get('seq')
-    fetchItem(seq ? parseInt(seq) : 1)
-  }, [datasetId, searchParams, fetchItem])
+    const taskId = searchParams.get('taskId')
+    // 如有 URL 参数则优先使用，否则读取上次进度
+    if (seq) {
+      fetchItem(parseInt(seq))
+    } else if (datasetId) {
+      const savedProgress = getProgress(datasetId, taskId)
+      fetchItem(savedProgress)
+    }
+  }, [datasetId, searchParams, fetchItem, getProgress])
 
   // 导航
   const goPrev = () => {
@@ -196,6 +236,8 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     if (seq >= 1 && seq <= totalItems) {
       fetchItem(seq)
       setJumpToSeq(null)
+      // 移除输入框焦点，确保快捷键正常工作
+      ;(document.activeElement as HTMLElement)?.blur()
     } else {
       message.warning(`索引 ${seq} 超出范围`)
     }
@@ -477,7 +519,6 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
 
   // 快捷键
   const hotkeys = useSettingsStore((state) => state.hotkeys)
-  const theme = useSettingsStore((state) => state.theme)
 
   useHotkeys(hotkeys.prevItem, goPrev, { enabled: !editingField })
   useHotkeys(hotkeys.nextItem, goNext, { enabled: !editingField })
@@ -542,68 +583,79 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   // 完成状态显示
   if (isCompleted) {
     return (
-      <div
-        style={{
-          minHeight: '80vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Card
+      <ConfigProvider theme={isDark ? darkTheme : lightTheme}>
+        <div
           style={{
-            textAlign: 'center',
-            padding: '40px 20px',
-            maxWidth: 500,
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: isDark ? '#141414' : '#f0f2f5',
           }}
         >
-          <div style={{ marginBottom: 24 }}>
-            <CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a' }} />
-          </div>
-          <Title level={3}>审核任务已完成</Title>
-          <Text type="secondary" style={{ fontSize: 16 }}>
-            感谢您的辛勤工作！您已完成所有分配的语料审核。
-          </Text>
-          <div style={{ marginTop: 32 }}>
-            <Space size="large">
-              <Button
-                size="large"
-                type="primary"
-                onClick={async () => {
-                  const taskId = searchParams.get('taskId')
-                  if (taskId && task) {
-                    try {
-                      await tasksApi.complete(parseInt(taskId, 10))
-                      message.success('任务已完成')
-                    } catch (error: any) {
-                      message.error(error.response?.data?.detail || '完成任务失败')
+          <Card
+            style={{
+              textAlign: 'center',
+              padding: '40px 20px',
+              maxWidth: 500,
+            }}
+          >
+            <div style={{ marginBottom: 24 }}>
+              <CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a' }} />
+            </div>
+            <Title level={3}>审核任务已完成</Title>
+            <Text type="secondary" style={{ fontSize: 16 }}>
+              感谢您的辛勤工作！您已完成所有分配的语料审核。
+            </Text>
+            <div style={{ marginTop: 32 }}>
+              <Space size="large">
+                <Button
+                  size="large"
+                  type="primary"
+                  onClick={async () => {
+                    const taskId = searchParams.get('taskId')
+                    if (taskId && task) {
+                      try {
+                        await tasksApi.complete(parseInt(taskId, 10))
+                        message.success('任务已完成')
+                      } catch (error: any) {
+                        message.error(error.response?.data?.detail || '完成任务失败')
+                      }
                     }
-                  }
-                  navigate(taskId ? '/tasks' : '/datasets')
-                }}
-              >
-                完成并退出
-              </Button>
-              <Button
-                size="large"
-                onClick={() => {
-                  setIsCompleted(false)
-                  fetchItem(1)
-                }}
-              >
-                重新检查
-              </Button>
-            </Space>
-          </div>
-        </Card>
-      </div>
+                    navigate(taskId ? '/tasks' : '/datasets')
+                  }}
+                >
+                  完成并退出
+                </Button>
+                <Button
+                  size="large"
+                  onClick={() => {
+                    setIsCompleted(false)
+                    fetchItem(1)
+                  }}
+                >
+                  重新检查
+                </Button>
+              </Space>
+            </div>
+          </Card>
+        </div>
+      </ConfigProvider>
     )
   }
 
   return (
-    <div>
-      {/* 头部 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+    <ConfigProvider theme={isDark ? darkTheme : lightTheme}>
+      <div
+        style={{
+          minHeight: '100vh',
+          padding: 24,
+          background: isDark ? '#141414' : '#f0f2f5',
+          color: isDark ? '#e8e8e8' : undefined,
+        }}
+      >
+        {/* 头部 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space>
           <Button
             icon={<ArrowLeftOutlined />}
@@ -649,7 +701,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             top: 0,
             left: 0,
             right: 0,
-            background: '#fff',
+            background: isDark ? '#1f1f1f' : '#fff',
             borderRadius: 8,
             boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
             padding: headerExpanded ? '12px 24px' : '8px 24px',
@@ -725,6 +777,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           <Space>
             <Text>跳转:</Text>
             <InputNumber
+              id="jump-input"
               size="small"
               min={1}
               max={totalItems}
@@ -751,10 +804,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         style={{
           marginBottom: 8,
           padding: '8px 12px',
-          background: '#f5f5f5',
+          background: isDark ? '#1f1f1f' : '#f5f5f5',
           borderRadius: 4,
           fontSize: 12,
-          color: '#666',
+          color: isDark ? '#F8F8F2' : '#666',
+          border: isDark ? '1px solid #1f1f1f' : 'none',
         }}
       >
         <Space split="|" wrap>
@@ -805,7 +859,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               originalContent={currentItem.original_content}
               currentContent={editingContent || currentItem.current_content}
               seqNum={currentItem.seq_num}
-              theme={theme}
+              theme={appTheme}
               fieldMapping={dataset?.field_mapping}
               datasetSourceFile={dataset?.source_file}
               editingField={editingField}
@@ -829,8 +883,8 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             width: 360,
             maxHeight: 220,
             overflow: 'auto',
-            background: '#fff',
-            border: '1px solid #e8e8e8',
+            background: isDark ? '#1f1f1f' : '#fff',
+            border: isDark ? '1px solid #1f1f1f' : '1px solid #e8e8e8',
             padding: 10,
             borderRadius: 6,
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
@@ -855,7 +909,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                   <div>
                     <strong>{l.tag}</strong> · {l.type} {l.field ? <span>· {l.field}</span> : null}
                   </div>
-                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#222' }}>
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: isDark ? '#e8e8e8' : '#222' }}>
                     {' '}
                     {JSON.stringify(l, null, 2)}{' '}
                   </div>
@@ -870,11 +924,13 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         style={{
           display: 'flex',
           justifyContent: 'center',
-          marginTop: 16,
-          padding: 16,
-          background: '#fff',
-          borderRadius: 8,
-          boxShadow: '0 -2px 8px rgba(0,0,0,0.06)',
+          padding: '16px 0',
+          background: isDark ? '#272822' : '#f5f5f5',
+          borderTop: isDark ? '1px solid #1f1f1f' : '1px solid #d9d9d9',
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 10,
+          boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
         }}
       >
         <Space size="large">
@@ -987,6 +1043,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         totalItems={totalItems}
         itemIds={markedItemIds}
       />
-    </div>
+      </div>
+    </ConfigProvider>
   )
 }

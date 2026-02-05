@@ -1,36 +1,42 @@
 import {
-  DeleteOutlined,
-  ExportOutlined,
-  EyeOutlined,
-  KeyOutlined,
-  MoreOutlined,
-  PlusOutlined,
-  SendOutlined,
-  SettingOutlined,
-  UploadOutlined,
+    DeleteOutlined,
+    ExportOutlined,
+    EyeOutlined,
+    FolderOutlined,
+    KeyOutlined,
+    MoreOutlined,
+    PlusOutlined,
+    SendOutlined,
+    SettingOutlined,
+    UploadOutlined,
 } from '@ant-design/icons'
 import {
-  Button,
-  Card,
-  Dropdown,
-  Form,
-  Input,
-  message,
-  Modal,
-  Space,
-  Spin,
-  Steps,
-  Table,
-  Tag,
-  Typography,
-  Upload,
+    Button,
+    Card,
+    Col,
+    Dropdown,
+    Form,
+    Input,
+    message,
+    Modal,
+    Row,
+    Space,
+    Spin,
+    Steps,
+    Table,
+    Tag,
+    Typography,
+    Upload,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
+import CreateFolderModal from '../components/CreateFolderModal'
 import DelegateModal from '../components/DelegateModal'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
-import { datasetsApi } from '../services/api'
+import FolderTree from '../components/FolderTree'
+import MoveFolderModal from '../components/MoveFolderModal'
+import { datasetsApi, foldersApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 
 const { Title } = Typography
@@ -82,10 +88,24 @@ export default function DatasetsPage() {
   const [form] = Form.useForm()
   const navigate = useNavigate()
 
-  const fetchDatasets = async () => {
+  // 目录相关状态
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null)
+  const [folderRefreshTrigger, setFolderRefreshTrigger] = useState(0)
+  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false)
+  const [createFolderParentId, setCreateFolderParentId] = useState<number | null>(null)
+  const [createFolderParentName, setCreateFolderParentName] = useState<string | undefined>(undefined)
+  const [moveFolderModalOpen, setMoveFolderModalOpen] = useState(false)
+  const [moveDatasetId, setMoveDatasetId] = useState<number | null>(null)
+  const [moveDatasetName, setMoveDatasetName] = useState<string>('')
+  const [renameFolderModalOpen, setRenameFolderModalOpen] = useState(false)
+  const [renameFolderId, setRenameFolderId] = useState<number | null>(null)
+  const [renameFolderName, setRenameFolderName] = useState('')
+  const [renameForm] = Form.useForm()
+
+  const fetchDatasets = async (folderId?: number | null) => {
     setLoading(true)
     try {
-      const res = await datasetsApi.list()
+      const res = await datasetsApi.list(1, 100, folderId)
       setDatasets(res.data.items)
     } catch (error) {
       message.error('获取数据集失败')
@@ -95,8 +115,8 @@ export default function DatasetsPage() {
   }
 
   useEffect(() => {
-    fetchDatasets()
-  }, [])
+    fetchDatasets(selectedFolderId)
+  }, [selectedFolderId])
 
   const handleUpload = async (values: any) => {
     if (!selectedFile) {
@@ -119,7 +139,8 @@ export default function DatasetsPage() {
 
       message.success('上传成功')
       handleCloseModal()
-      fetchDatasets()
+      fetchDatasets(selectedFolderId)
+      setFolderRefreshTrigger((prev) => prev + 1)
     } catch (error: any) {
       message.error(error.response?.data?.detail || '上传失败')
     } finally {
@@ -161,10 +182,69 @@ export default function DatasetsPage() {
     try {
       await datasetsApi.delete(id)
       message.success('数据集已删除')
-      fetchDatasets()
+      fetchDatasets(selectedFolderId)
+      setFolderRefreshTrigger((prev) => prev + 1)
     } catch (error: any) {
       message.error(error.response?.data?.detail || '删除失败')
     }
+  }
+
+  // 目录操作
+  const handleCreateFolder = (parentId: number | null, parentName?: string) => {
+    setCreateFolderParentId(parentId)
+    setCreateFolderParentName(parentName)
+    setCreateFolderModalOpen(true)
+  }
+
+  const handleRenameFolder = (folder: { id: number; name: string }) => {
+    setRenameFolderId(folder.id)
+    setRenameFolderName(folder.name)
+    renameForm.setFieldsValue({ name: folder.name })
+    setRenameFolderModalOpen(true)
+  }
+
+  const handleDeleteFolder = async (folderId: number) => {
+    Modal.confirm({
+      title: '确定要删除此目录吗？',
+      content: '目录必须为空才能删除。',
+      okText: '确定',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await foldersApi.delete(folderId)
+          message.success('目录已删除')
+          setFolderRefreshTrigger((prev) => prev + 1)
+          if (selectedFolderId === folderId) {
+            setSelectedFolderId(null)
+          }
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || '删除目录失败')
+        }
+      },
+    })
+  }
+
+  const handleRenameFolderSubmit = async () => {
+    try {
+      const values = await renameForm.validateFields()
+      if (renameFolderId) {
+        await foldersApi.update(renameFolderId, { name: values.name.trim() })
+        message.success('目录已重命名')
+        setRenameFolderModalOpen(false)
+        setFolderRefreshTrigger((prev) => prev + 1)
+      }
+    } catch (error: any) {
+      if (error.response?.data?.detail) {
+        message.error(error.response.data.detail)
+      }
+    }
+  }
+
+  const handleMoveDataset = (dataset: Dataset) => {
+    setMoveDatasetId(dataset.id)
+    setMoveDatasetName(dataset.name)
+    setMoveFolderModalOpen(true)
   }
 
   const columns = [
@@ -253,6 +333,12 @@ export default function DatasetsPage() {
                       onClick: () => navigate(`/datasets/${record.id}`),
                     },
                     {
+                      key: 'move',
+                      icon: <FolderOutlined />,
+                      label: '移动到目录',
+                      onClick: () => handleMoveDataset(record),
+                    },
+                    {
                       type: 'divider',
                     },
                     {
@@ -296,15 +382,34 @@ export default function DatasetsPage() {
         )}
       </div>
 
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={datasets}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 20 }}
-        />
-      </Card>
+      <Row gutter={16}>
+        {/* 左侧目录树 */}
+        <Col span={5}>
+          <Card size="small" style={{ minHeight: 400 }}>
+            <FolderTree
+              selectedFolderId={selectedFolderId}
+              onSelect={setSelectedFolderId}
+              onCreateFolder={(parentId) => handleCreateFolder(parentId)}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+              refreshTrigger={folderRefreshTrigger}
+            />
+          </Card>
+        </Col>
+
+        {/* 右侧数据集列表 */}
+        <Col span={19}>
+          <Card>
+            <Table
+              columns={columns}
+              dataSource={datasets}
+              rowKey="id"
+              loading={loading}
+              pagination={{ pageSize: 20 }}
+            />
+          </Card>
+        </Col>
+      </Row>
 
       <AuthCodeModal
         open={authCodeModalOpen}
@@ -420,6 +525,50 @@ export default function DatasetsPage() {
             </Form.Item>
           </Form>
         )}
+      </Modal>
+
+      {/* 新建目录弹窗 */}
+      <CreateFolderModal
+        open={createFolderModalOpen}
+        parentId={createFolderParentId}
+        parentName={createFolderParentName}
+        onClose={() => setCreateFolderModalOpen(false)}
+        onSuccess={() => setFolderRefreshTrigger((prev) => prev + 1)}
+      />
+
+      {/* 移动数据集弹窗 */}
+      <MoveFolderModal
+        open={moveFolderModalOpen}
+        datasetId={moveDatasetId}
+        datasetName={moveDatasetName}
+        onClose={() => setMoveFolderModalOpen(false)}
+        onSuccess={() => {
+          fetchDatasets(selectedFolderId)
+          setFolderRefreshTrigger((prev) => prev + 1)
+        }}
+      />
+
+      {/* 重命名目录弹窗 */}
+      <Modal
+        title="重命名目录"
+        open={renameFolderModalOpen}
+        onOk={handleRenameFolderSubmit}
+        onCancel={() => setRenameFolderModalOpen(false)}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Form form={renameForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            name="name"
+            label="目录名称"
+            rules={[
+              { required: true, message: '请输入目录名称' },
+              { max: 200, message: '目录名称不能超过200个字符' },
+            ]}
+          >
+            <Input placeholder="输入新的目录名称" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )
