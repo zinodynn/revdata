@@ -12,6 +12,7 @@ import {
 import {
   Button,
   Card,
+  ConfigProvider,
   Dropdown,
   InputNumber,
   Space,
@@ -19,6 +20,7 @@ import {
   Statistic,
   Tag,
   Typography,
+  theme as antdTheme,
   message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
@@ -31,6 +33,7 @@ import MarkedItemsModal from '../components/MarkedItemsModal'
 import QACardUnified from '../components/QACardUnified'
 import ShareModal from '../components/ShareModal'
 import { datasetsApi, itemsApi, tasksApi } from '../services/api'
+import { useProgressStore } from '../stores/progressStore'
 import { useSettingsStore } from '../stores/settingsStore'
 
 const { Title, Text } = Typography
@@ -62,8 +65,33 @@ interface ReviewPageProps {
  */
 export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPageProps) {
   const { datasetId } = useParams<{ datasetId: string }>()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+
+  // 进度记忆
+  const { setProgress, getProgress } = useProgressStore()
+
+  // Theme support
+  const appTheme = useSettingsStore((state) => state.theme)
+  const isDark = appTheme === 'dark'
+
+  const darkTheme = {
+    algorithm: antdTheme.darkAlgorithm,
+    token: {
+      colorPrimary: '#1890ff',
+      colorBgContainer: '#1f1f1f',
+      colorBgLayout: '#141414',
+      colorText: '#e8e8e8',
+      colorBorder: '#434343',
+    },
+  }
+
+  const lightTheme = {
+    algorithm: antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: '#1890ff',
+    },
+  }
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -159,6 +187,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           setCurrentIndex(index)
           setEditingContent(JSON.parse(JSON.stringify(normalized.current_content)))
           setEditingField(null)
+          // 保存进度
+          const taskId = searchParams.get('taskId')
+          if (datasetId) {
+            setProgress(datasetId, taskId, index)
+          }
         }
       } catch (error) {
         message.error('获取语料失败')
@@ -166,22 +199,107 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         setLoading(false)
       }
     },
-    [datasetId],
+    [datasetId, searchParams, setProgress],
   )
 
+  // 自动跳转逻辑：如果没有指定 seq，则尝试跳转到第一条待审核记录
   useEffect(() => {
-    const seq = searchParams.get('seq')
-    fetchItem(seq ? parseInt(seq) : 1)
-  }, [datasetId, searchParams, fetchItem])
+    if (!datasetId) return
+
+    const seqParam = searchParams.get('seq')
+    const taskIdParam = searchParams.get('taskId')
+    
+    // 如果有 taskId 且 task 数据尚未加载，等待 task 加载完成
+    if (taskIdParam && !task) return
+
+    // 1. 如果 URL 有 seq 参数，直接使用
+    if (seqParam) {
+      fetchItem(parseInt(seqParam))
+      return
+    }
+
+    // 2. 否则查找第一条待审核记录
+    const autoJump = async () => {
+      try {
+        const res = await itemsApi.list(
+          parseInt(datasetId),
+          1,
+          1,
+          'pending', // 筛选待审核
+          undefined,
+          taskIdParam ? parseInt(taskIdParam) : undefined
+        )
+
+        if (res.data.items && res.data.items.length > 0) {
+          const item = res.data.items[0]
+          let targetIndex = item.seq_num
+
+          // 如果是任务模式，需要计算相对索引
+          if (taskIdParam && task) {
+            if (task.item_ids && task.item_ids.length > 0) {
+              // 离散任务：暂不支持自动计算索引，降级到读取进度或第一条
+              const saved = getProgress(datasetId, taskIdParam)
+              // URL 驱动跳转
+              setSearchParams(prev => {
+                const p = new URLSearchParams(prev)
+                p.set('seq', (saved > 1 ? saved : 1).toString())
+                return p
+              }, { replace: true })
+              return
+            } else {
+              // 连续任务：计算相对索引
+              targetIndex = item.seq_num - task.item_start + 1
+            }
+          }
+
+          // 跳转到目标进度
+          setSearchParams(prev => {
+            const p = new URLSearchParams(prev)
+            p.set('seq', (targetIndex > 0 ? targetIndex : 1).toString())
+            return p
+          }, { replace: true })
+        } else {
+          // 没有待审核记录（可能都完成了），降级到读取进度或第一条
+           const saved = getProgress(datasetId, taskIdParam || null)
+           setSearchParams(prev => {
+             const p = new URLSearchParams(prev)
+             p.set('seq', (saved > 1 ? saved : 1).toString())
+             return p
+           }, { replace: true })
+        }
+      } catch (error) {
+        console.error('Auto-jump failed', error)
+        setSearchParams(prev => {
+          const p = new URLSearchParams(prev)
+          p.set('seq', '1')
+          return p
+        }, { replace: true })
+      }
+    }
+
+    autoJump()
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasetId, task, searchParams]) // 当 task 加载完成后会重新触发校验
 
   // 导航
   const goPrev = () => {
-    if (currentIndex > 1 && !editingField) fetchItem(currentIndex - 1)
+    if (currentIndex > 1 && !editingField) {
+      setSearchParams(prev => {
+        const p = new URLSearchParams(prev)
+        p.set('seq', (currentIndex - 1).toString())
+        return p
+      })
+    }
   }
 
   const goNext = () => {
     if (currentIndex < totalItems && !editingField) {
-      fetchItem(currentIndex + 1)
+      setSearchParams(prev => {
+        const p = new URLSearchParams(prev)
+        p.set('seq', (currentIndex + 1).toString())
+        return p
+      })
     } else if (currentIndex >= totalItems && !editingField) {
       // 到达最后一条，显示完成提示
       setIsCompleted(true)
@@ -194,8 +312,14 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     // 无论是全局模式还是任务模式，seq 在此处都代表列表中的索引(page)
     // 因为 InputNumber 的 max 限制为 totalItems (当前列表总数)
     if (seq >= 1 && seq <= totalItems) {
-      fetchItem(seq)
+      setSearchParams(prev => {
+        const p = new URLSearchParams(prev)
+        p.set('seq', seq.toString())
+        return p
+      })
       setJumpToSeq(null)
+      // 移除输入框焦点，确保快捷键正常工作
+      ;(document.activeElement as HTMLElement)?.blur()
     } else {
       message.warning(`索引 ${seq} 超出范围`)
     }
@@ -224,11 +348,19 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           } else {
             // 范围任务
             const relativeIndex = item.seq_num - task.item_start + 1
-            fetchItem(relativeIndex)
+            setSearchParams(prev => {
+              const p = new URLSearchParams(prev)
+              p.set('seq', relativeIndex.toString())
+              return p
+            })
           }
         } else {
           // 全局模式，seq_num 即为索引
-          fetchItem(item.seq_num)
+          setSearchParams(prev => {
+            const p = new URLSearchParams(prev)
+            p.set('seq', item.seq_num.toString())
+            return p
+          })
         }
       } else {
         message.info('没有待审核的语料了')
@@ -258,10 +390,18 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             message.info('离散任务模式下暂不支持按状态跳转')
           } else {
             const relativeIndex = item.seq_num - task.item_start + 1
-            fetchItem(relativeIndex)
+            setSearchParams(prev => {
+              const p = new URLSearchParams(prev)
+              p.set('seq', relativeIndex.toString())
+              return p
+            })
           }
         } else {
-          fetchItem(item.seq_num)
+          setSearchParams(prev => {
+            const p = new URLSearchParams(prev)
+            p.set('seq', item.seq_num.toString())
+            return p
+          })
         }
       } else {
         const statusLabels: Record<string, string> = {
@@ -297,10 +437,18 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             message.info('离散任务模式下暂不支持按标记跳转')
           } else {
             const relativeIndex = item.seq_num - task.item_start + 1
-            fetchItem(relativeIndex)
+            setSearchParams(prev => {
+              const p = new URLSearchParams(prev)
+              p.set('seq', relativeIndex.toString())
+              return p
+            })
           }
         } else {
-          fetchItem(item.seq_num)
+          setSearchParams(prev => {
+            const p = new URLSearchParams(prev)
+            p.set('seq', item.seq_num.toString())
+            return p
+          })
         }
       } else {
         message.info('没有标记的语料')
@@ -477,7 +625,6 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
 
   // 快捷键
   const hotkeys = useSettingsStore((state) => state.hotkeys)
-  const theme = useSettingsStore((state) => state.theme)
 
   useHotkeys(hotkeys.prevItem, goPrev, { enabled: !editingField })
   useHotkeys(hotkeys.nextItem, goNext, { enabled: !editingField })
@@ -542,68 +689,83 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   // 完成状态显示
   if (isCompleted) {
     return (
-      <div
-        style={{
-          minHeight: '80vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Card
+      <ConfigProvider theme={isDark ? darkTheme : lightTheme}>
+        <div
           style={{
-            textAlign: 'center',
-            padding: '40px 20px',
-            maxWidth: 500,
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: isDark ? '#141414' : '#f0f2f5',
           }}
         >
-          <div style={{ marginBottom: 24 }}>
-            <CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a' }} />
-          </div>
-          <Title level={3}>审核任务已完成</Title>
-          <Text type="secondary" style={{ fontSize: 16 }}>
-            感谢您的辛勤工作！您已完成所有分配的语料审核。
-          </Text>
-          <div style={{ marginTop: 32 }}>
-            <Space size="large">
-              <Button
-                size="large"
-                type="primary"
-                onClick={async () => {
-                  const taskId = searchParams.get('taskId')
-                  if (taskId && task) {
-                    try {
-                      await tasksApi.complete(parseInt(taskId, 10))
-                      message.success('任务已完成')
-                    } catch (error: any) {
-                      message.error(error.response?.data?.detail || '完成任务失败')
+          <Card
+            style={{
+              textAlign: 'center',
+              padding: '40px 20px',
+              maxWidth: 500,
+            }}
+          >
+            <div style={{ marginBottom: 24 }}>
+              <CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a' }} />
+            </div>
+            <Title level={3}>审核任务已完成</Title>
+            <Text type="secondary" style={{ fontSize: 16 }}>
+              感谢您的辛勤工作！您已完成所有分配的语料审核。
+            </Text>
+            <div style={{ marginTop: 32 }}>
+              <Space size="large">
+                <Button
+                  size="large"
+                  type="primary"
+                  onClick={async () => {
+                    const taskId = searchParams.get('taskId')
+                    if (taskId && task) {
+                      try {
+                        await tasksApi.complete(parseInt(taskId, 10))
+                        message.success('任务已完成')
+                      } catch (error: any) {
+                        message.error(error.response?.data?.detail || '完成任务失败')
+                      }
                     }
-                  }
-                  navigate(taskId ? '/tasks' : '/datasets')
-                }}
-              >
-                完成并退出
-              </Button>
-              <Button
-                size="large"
-                onClick={() => {
-                  setIsCompleted(false)
-                  fetchItem(1)
-                }}
-              >
-                重新检查
-              </Button>
-            </Space>
-          </div>
-        </Card>
-      </div>
+                    navigate(taskId ? '/tasks' : '/datasets')
+                  }}
+                >
+                  完成并退出
+                </Button>
+                <Button
+                  size="large"
+                  onClick={() => {
+                    setIsCompleted(false)
+                    setSearchParams(prev => {
+                      const p = new URLSearchParams(prev)
+                      p.set('seq', '1')
+                      return p
+                    })
+                  }}
+                >
+                  重新检查
+                </Button>
+              </Space>
+            </div>
+          </Card>
+        </div>
+      </ConfigProvider>
     )
   }
 
   return (
-    <div>
-      {/* 头部 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+    <ConfigProvider theme={isDark ? darkTheme : lightTheme}>
+      <div
+        style={{
+          minHeight: '100vh',
+          padding: 24,
+          background: isDark ? '#141414' : '#f0f2f5',
+          color: isDark ? '#e8e8e8' : undefined,
+        }}
+      >
+        {/* 头部 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space>
           <Button
             icon={<ArrowLeftOutlined />}
@@ -649,7 +811,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             top: 0,
             left: 0,
             right: 0,
-            background: '#fff',
+            background: isDark ? '#1f1f1f' : '#fff',
             borderRadius: 8,
             boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
             padding: headerExpanded ? '12px 24px' : '8px 24px',
@@ -725,6 +887,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           <Space>
             <Text>跳转:</Text>
             <InputNumber
+              id="jump-input"
               size="small"
               min={1}
               max={totalItems}
@@ -751,10 +914,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         style={{
           marginBottom: 8,
           padding: '8px 12px',
-          background: '#f5f5f5',
+          background: isDark ? '#1f1f1f' : '#f5f5f5',
           borderRadius: 4,
           fontSize: 12,
-          color: '#666',
+          color: isDark ? '#F8F8F2' : '#666',
+          border: isDark ? '1px solid #1f1f1f' : 'none',
         }}
       >
         <Space split="|" wrap>
@@ -805,7 +969,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               originalContent={currentItem.original_content}
               currentContent={editingContent || currentItem.current_content}
               seqNum={currentItem.seq_num}
-              theme={theme}
+              theme={appTheme}
               fieldMapping={dataset?.field_mapping}
               datasetSourceFile={dataset?.source_file}
               editingField={editingField}
@@ -829,8 +993,8 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             width: 360,
             maxHeight: 220,
             overflow: 'auto',
-            background: '#fff',
-            border: '1px solid #e8e8e8',
+            background: isDark ? '#1f1f1f' : '#fff',
+            border: isDark ? '1px solid #1f1f1f' : '1px solid #e8e8e8',
             padding: 10,
             borderRadius: 6,
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
@@ -855,7 +1019,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                   <div>
                     <strong>{l.tag}</strong> · {l.type} {l.field ? <span>· {l.field}</span> : null}
                   </div>
-                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#222' }}>
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: isDark ? '#e8e8e8' : '#222' }}>
                     {' '}
                     {JSON.stringify(l, null, 2)}{' '}
                   </div>
@@ -870,11 +1034,13 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         style={{
           display: 'flex',
           justifyContent: 'center',
-          marginTop: 16,
-          padding: 16,
-          background: '#fff',
-          borderRadius: 8,
-          boxShadow: '0 -2px 8px rgba(0,0,0,0.06)',
+          padding: '16px 0',
+          background: isDark ? '#272822' : '#f5f5f5',
+          borderTop: isDark ? '1px solid #1f1f1f' : '1px solid #d9d9d9',
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 10,
+          boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
         }}
       >
         <Space size="large">
@@ -987,6 +1153,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         totalItems={totalItems}
         itemIds={markedItemIds}
       />
-    </div>
+      </div>
+    </ConfigProvider>
   )
 }

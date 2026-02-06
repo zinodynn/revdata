@@ -12,6 +12,7 @@ import {
   Button,
   Card,
   Col,
+  ConfigProvider,
   Descriptions,
   message,
   Modal,
@@ -22,6 +23,7 @@ import {
   Statistic,
   Tabs,
   Tag,
+  theme,
   Typography,
 } from 'antd'
 import { useEffect, useState } from 'react'
@@ -29,6 +31,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import { datasetsApi, exportApi, usersApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+import { useSettingsStore } from '../stores/settingsStore'
 
 const { Title } = Typography
 
@@ -76,6 +79,8 @@ export default function DatasetDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuthStore()
+  const appTheme = useSettingsStore((state) => state.theme)
+  const isDark = appTheme === 'dark'
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
   const [users, setUsers] = useState<any[]>([])
@@ -323,15 +328,35 @@ export default function DatasetDetailPage() {
     },
   ]
 
+  // 深色/浅色主题配置
+  const darkTheme = {
+    algorithm: theme.darkAlgorithm,
+    token: {
+      colorPrimary: '#6eb9ffff',
+      colorBgContainer: '#1f1f1f',
+      colorBgLayout: '#141414',
+      colorText: '#e8e8e8',
+      colorBorder: '#434343',
+    },
+  }
+
+  const lightTheme = {
+    algorithm: theme.defaultAlgorithm,
+    token: {
+      colorPrimary: '#6eb9ffff',
+    },
+  }
+
   return (
-    <div>
-      <Breadcrumb
-        items={[
-          { title: <a onClick={() => navigate('/datasets')}>数据集</a> },
-          { title: dataset.name },
-        ]}
-        style={{ marginBottom: 16 }}
-      />
+    <ConfigProvider theme={isDark ? darkTheme : lightTheme}>
+      <div>
+        <Breadcrumb
+          items={[
+            { title: <a onClick={() => navigate('/datasets')}>数据集</a> },
+            { title: dataset.name },
+          ]}
+          style={{ marginBottom: 16 }}
+        />
 
       <Card
         title={
@@ -407,6 +432,7 @@ export default function DatasetDetailPage() {
             ))}
         </Select>
       </Modal>
-    </div>
+      </div>
+    </ConfigProvider>
   )
 }

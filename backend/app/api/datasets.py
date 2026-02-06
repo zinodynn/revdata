@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.models.data_item import DataItem, ItemStatus, ItemType
 from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
+from app.models.folder import Folder
 from app.models.task import Task
 from app.models.user import User, UserRole
 from app.schemas.dataset import (
@@ -25,6 +26,7 @@ from app.schemas.dataset import (
     FieldDetectionResponse,
     FieldMapping,
 )
+from app.schemas.folder import DatasetMoveRequest
 from app.utils import normalize_json_keys
 
 router = APIRouter()
@@ -371,23 +373,34 @@ async def process_dataset_import(
 async def list_datasets(
     page: int = 1,
     page_size: int = 20,
+    folder_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取数据集列表"""
+    """获取数据集列表，支持按目录筛选"""
     offset = (page - 1) * page_size
 
+    # 构建查询条件
+    conditions = []
+    if folder_id is not None:
+        conditions.append(Dataset.folder_id == folder_id)
+    elif folder_id is None:
+        # 如果 folder_id 参数存在且为空字符串，筛选根目录下的数据集
+        # 注意: FastAPI 默认 None 表示未传参数
+        pass  # 返回所有数据集
+
     # 查询总数
-    count_result = await db.execute(select(func.count(Dataset.id)))
+    count_query = select(func.count(Dataset.id))
+    if conditions:
+        count_query = count_query.where(*conditions)
+    count_result = await db.execute(count_query)
     total = count_result.scalar()
 
     # 查询数据
-    result = await db.execute(
-        select(Dataset)
-        .order_by(Dataset.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
-    )
+    query = select(Dataset).order_by(Dataset.created_at.desc()).offset(offset).limit(page_size)
+    if conditions:
+        query = query.where(*conditions)
+    result = await db.execute(query)
     datasets = result.scalars().all()
 
     return DatasetListResponse(
@@ -489,6 +502,51 @@ async def update_dataset(
             )
         dataset.owner_id = update_data.owner_id
 
+    await db.commit()
+    await db.refresh(dataset)
+
+    return dataset
+
+
+@router.put("/{dataset_id}/move", response_model=DatasetResponse)
+async def move_dataset(
+    dataset_id: int,
+    move_data: DatasetMoveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """移动数据集到指定目录"""
+    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+    dataset = result.scalar_one_or_none()
+
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在"
+        )
+
+    # 检查权限：只有所有者或管理员可以移动
+    if dataset.owner_id != current_user.id and current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="无权移动此数据集"
+        )
+
+    # 如果指定了目标目录，检查目录是否存在且属于当前用户
+    if move_data.folder_id is not None:
+        folder_result = await db.execute(
+            select(Folder)
+            .where(Folder.id == move_data.folder_id)
+            .where(Folder.owner_id == current_user.id)
+        )
+        folder = folder_result.scalar_one_or_none()
+        if not folder:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="目标目录不存在"
+            )
+
+    dataset.folder_id = move_data.folder_id
     await db.commit()
     await db.refresh(dataset)
 

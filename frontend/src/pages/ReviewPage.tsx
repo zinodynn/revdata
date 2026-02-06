@@ -1,31 +1,33 @@
 import {
-  ArrowLeftOutlined,
-  CheckOutlined,
-  CloseOutlined,
-  EditOutlined,
-  LeftOutlined,
-  RightOutlined,
-  SaveOutlined,
+    ArrowLeftOutlined,
+    CheckOutlined,
+    CloseOutlined,
+    EditOutlined,
+    LeftOutlined,
+    RightOutlined,
+    SaveOutlined,
 } from '@ant-design/icons'
 import {
-  Button,
-  Card,
-  Col,
-  Input,
-  Row,
-  Space,
-  Spin,
-  Statistic,
-  Tag,
-  Typography,
-  message,
+    Button,
+    Card,
+    Col,
+    Input,
+    Row,
+    Space,
+    Spin,
+    Statistic,
+    Tag,
+    Typography,
+    message,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams } from 'react-router-dom'
 import { datasetsApi, itemsApi } from '../services/api'
+import { useProgressStore } from '../stores/progressStore'
 import { useReviewStore } from '../stores/reviewStore'
+import { useSettingsStore } from '../stores/settingsStore'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -64,6 +66,8 @@ export default function ReviewPage() {
     setEditing,
     setEditingContent,
   } = useReviewStore()
+  const { theme } = useSettingsStore()
+  const { setProgress, getProgress } = useProgressStore()
 
   // 获取数据集信息
   useEffect(() => {
@@ -90,6 +94,8 @@ export default function ReviewPage() {
       if (items.length > 0) {
         setCurrentItem(items[0])
         setCurrentIndex(page)
+        // 保存进度
+        setProgress(datasetId, null, page)
       }
     } catch (error) {
       message.error('获取语料失败')
@@ -99,7 +105,11 @@ export default function ReviewPage() {
   }
 
   useEffect(() => {
-    fetchItems(1)
+    // 读取上次进度
+    if (datasetId) {
+      const savedProgress = getProgress(datasetId, null)
+      fetchItems(savedProgress)
+    }
   }, [datasetId])
 
   // 上一条
@@ -364,7 +374,19 @@ export default function ReviewPage() {
       </Spin>
 
       {/* 操作按钮 */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '16px 0',
+          background: theme === 'dark' ? '#141414' : '#f5f5f5',
+          borderTop: theme === 'dark' ? '1px solid #303030' : '1px solid #d9d9d9',
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 10,
+          boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
+        }}
+      >
         <Space size="large">
           <Button icon={<LeftOutlined />} onClick={goPrev} disabled={currentIndex <= 1}>
             上一条

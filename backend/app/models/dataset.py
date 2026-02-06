@@ -68,6 +68,9 @@ class Dataset(Base):
     # }
     review_config = Column(JSON, nullable=True, default=None)
 
+    # 所属目录（可选，为空表示在根目录）
+    folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -75,6 +78,7 @@ class Dataset(Base):
     owner = relationship(
         "User", back_populates="owned_datasets", foreign_keys=[owner_id]
     )
+    folder = relationship("Folder", back_populates="datasets")
     items = relationship(
         "DataItem", back_populates="dataset", cascade="all, delete-orphan"
     )
