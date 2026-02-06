@@ -19,6 +19,7 @@ from app.models.folder import Folder
 from app.models.task import Task
 from app.models.user import User, UserRole
 from app.schemas.dataset import (
+    AppendResult,
     DatasetListResponse,
     DatasetResponse,
     DatasetUpdate,
@@ -27,6 +28,7 @@ from app.schemas.dataset import (
     FieldMapping,
 )
 from app.schemas.folder import DatasetMoveRequest
+from app.services.dedup import create_deduplicator, extract_query_text, get_dedup_index_path
 from app.utils import normalize_json_keys
 
 router = APIRouter()
@@ -480,6 +482,8 @@ async def update_dataset(
         dataset.field_mapping = update_data.field_mapping.model_dump()
     if update_data.review_config is not None:
         dataset.review_config = update_data.review_config.model_dump()
+    if update_data.dedup_config is not None:
+        dataset.dedup_config = update_data.dedup_config.model_dump()
     if update_data.status is not None:
         dataset.status = update_data.status
     if update_data.owner_id is not None:
@@ -732,3 +736,224 @@ async def detect_fields_from_file(
         suggested_mapping=suggested_mapping,
         item_count_estimate=len(items),
     )
+
+
+@router.post("/{dataset_id}/append", response_model=AppendResult)
+async def append_dataset(
+    dataset_id: int,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    skip_duplicates: bool = Form(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """向现有数据集追加导入数据"""
+    # 检查数据集是否存在
+    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+    dataset = result.scalar_one_or_none()
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在"
+        )
+
+    if dataset.status == DatasetStatus.IMPORTING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="数据集正在导入中，请等待完成后再追加",
+        )
+
+    # 检测文件格式
+    filename = file.filename.lower()
+    if filename.endswith(".jsonl"):
+        format_type = DatasetFormat.JSONL
+    elif filename.endswith(".json"):
+        format_type = DatasetFormat.JSON
+    elif filename.endswith(".csv"):
+        format_type = DatasetFormat.CSV
+    elif filename.endswith(".tsv"):
+        format_type = DatasetFormat.TSV
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不支持的文件格式，请上传 JSONL, JSON, CSV 或 TSV 文件",
+        )
+
+    # 保存文件
+    upload_id = str(uuid.uuid4())
+    save_dir = os.path.join(settings.UPLOAD_DIR, upload_id)
+    os.makedirs(save_dir, exist_ok=True)
+    file_path = os.path.join(save_dir, file.filename)
+
+    with open(file_path, "wb") as buffer:
+        while True:
+            chunk = await file.read(1024 * 1024 * 10)
+            if not chunk:
+                break
+            buffer.write(chunk)
+
+    # 在后台处理追加导入
+    background_tasks.add_task(
+        process_dataset_append,
+        dataset_id,
+        file_path,
+        format_type,
+        skip_duplicates,
+    )
+
+    return AppendResult(
+        total_in_file=0,
+        appended=0,
+        skipped_duplicates=0,
+        new_total=dataset.item_count,
+    )
+
+
+async def process_dataset_append(
+    dataset_id: int,
+    file_path: str,
+    format_type: DatasetFormat,
+    skip_duplicates: bool,
+):
+    """后台处理数据集追加导入"""
+    import asyncio
+
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+            dataset = result.scalar_one_or_none()
+            if not dataset:
+                return
+
+            # 读取并解析文件
+            def read_content():
+                read_items = []
+                with open(file_path, "r", encoding="utf-8") as f:
+                    if format_type == DatasetFormat.JSONL:
+                        for line in f:
+                            if line.strip():
+                                read_items.append(json.loads(line))
+                    elif format_type == DatasetFormat.JSON:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            read_items = data
+                        else:
+                            read_items = [data]
+                    elif format_type in (DatasetFormat.CSV, DatasetFormat.TSV):
+                        delimiter = "," if format_type == DatasetFormat.CSV else "\t"
+                        reader = csv.DictReader(f, delimiter=delimiter)
+                        for row in reader:
+                            read_items.append(dict(row))
+                return read_items
+
+            items = await asyncio.to_thread(read_content)
+            items = [normalize_json_keys(it) for it in items]
+
+            if not items:
+                return
+
+            # 获取当前最大 seq_num
+            max_seq_result = await db.execute(
+                select(func.max(DataItem.seq_num)).where(
+                    DataItem.dataset_id == dataset_id
+                )
+            )
+            current_max_seq = max_seq_result.scalar() or 0
+
+            # 去重处理
+            skipped = 0
+            items_to_add = items
+
+            dedup_config = dataset.dedup_config or {}
+            
+            if skip_duplicates:
+                # 确定去重配置：优先使用数据集已启用的配置，否则使用默认文本去重
+                is_configured = dedup_config.get("enabled", False)
+                
+                if is_configured:
+                    effective_config = dedup_config
+                else:
+                    # 默认配置：使用文本去重 (Jaccard)
+                    effective_config = {
+                        "enabled": True,
+                        "use_embedding": False,
+                        "query_field": "question",
+                        "similarity_threshold": 0.8
+                    }
+
+                query_field = effective_config.get("query_field", "question")
+                threshold = effective_config.get("similarity_threshold", 0.8)
+                use_embedding = effective_config.get("use_embedding", False)
+
+                # 创建去重器
+                deduplicator = await create_deduplicator(effective_config)
+
+                # 尝试加载已有索引
+                index_path = get_dedup_index_path(dataset_id, use_embedding)
+                
+                if not deduplicator.load_index(index_path):
+                    # 没有索引文件, 从现有数据构建
+                    existing_result = await db.execute(
+                        select(DataItem.original_content).where(
+                            DataItem.dataset_id == dataset_id
+                        )
+                    )
+                    existing_contents = existing_result.scalars().all()
+                    
+                    existing_texts = [
+                        extract_query_text(c, query_field)
+                        for c in existing_contents
+                        if isinstance(c, dict)
+                    ]
+                    await deduplicator.build_index(existing_texts)
+                    # 首次构建后保存
+                    deduplicator.save_index(index_path)
+
+                # 检查新数据的重复
+                new_texts = [extract_query_text(it, query_field) for it in items]
+                dup_flags = await deduplicator.check_duplicates(new_texts, threshold)
+
+                items_to_add = []
+                non_dup_texts = []
+                for item, is_dup in zip(items, dup_flags):
+                    if is_dup:
+                        skipped += 1
+                    else: 
+                        items_to_add.append(item)
+                        non_dup_texts.append(
+                            extract_query_text(item, query_field)
+                        )
+
+                # 将非重复项追加到索引并保存
+                if non_dup_texts:
+                    await deduplicator.add_to_index(non_dup_texts)
+                    deduplicator.save_index(index_path)
+
+            # 写入新数据项
+            batch_size = 1000
+            for i in range(0, len(items_to_add), batch_size):
+                batch = items_to_add[i : i + batch_size]
+                for seq_offset, item_content in enumerate(batch):
+                    item_type = detect_item_type(item_content)
+                    data_item = DataItem(
+                        dataset_id=dataset.id,
+                        seq_num=current_max_seq + i + seq_offset + 1,
+                        item_type=item_type,
+                        original_content=item_content,
+                        current_content=item_content,
+                        status=ItemStatus.PENDING,
+                    )
+                    db.add(data_item)
+                await db.commit()
+
+            # 更新数据集条目数
+            dataset.item_count = (dataset.item_count or 0) + len(items_to_add)
+            await db.commit()
+
+            print(
+                f"Dataset {dataset_id} append: "
+                f"file={len(items)}, added={len(items_to_add)}, skipped={skipped}"
+            )
+
+        except Exception as e:
+            print(f"Error appending to dataset {dataset_id}: {e}")
+            await db.rollback()

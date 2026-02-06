@@ -68,6 +68,20 @@ class Dataset(Base):
     # }
     review_config = Column(JSON, nullable=True, default=None)
 
+    # 去重配置
+    # {
+    #   "enabled": false,
+    #   "use_embedding": true,
+    #   "embedding_api_url": null,
+    #   "embedding_api_key": null,
+    #   "embedding_model": "text-embedding-ada-002",
+    #   "embedding_batch_size": 32,
+    #   "embedding_concurrency": 1,
+    #   "similarity_threshold": 0.8,
+    #   "query_field": "question"
+    # }
+    dedup_config = Column(JSON, nullable=True, default=None)
+
     # 所属目录（可选，为空表示在根目录）
     folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
 
@@ -85,4 +99,7 @@ class Dataset(Base):
     tasks = relationship("Task", back_populates="dataset", cascade="all, delete-orphan")
     auth_codes = relationship(
         "AuthCode", back_populates="dataset", cascade="all, delete-orphan"
+    )
+    reference_docs = relationship(
+        "ReferenceDoc", back_populates="dataset", cascade="all, delete-orphan"
     )

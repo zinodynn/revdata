@@ -28,6 +28,7 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
 import DelegateModal from '../components/DelegateModal'
+import DocumentViewer from '../components/DocumentViewer'
 import ExportModal from '../components/ExportModal'
 import MarkedItemsModal from '../components/MarkedItemsModal'
 import QACardUnified from '../components/QACardUnified'
@@ -1153,6 +1154,14 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         totalItems={totalItems}
         itemIds={markedItemIds}
       />
+
+      {/* 参考文档查看面板 */}
+      {datasetId && (
+        <DocumentViewer
+          datasetId={parseInt(datasetId)}
+          theme={appTheme}
+        />
+      )}
       </div>
     </ConfigProvider>
   )

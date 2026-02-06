@@ -104,6 +104,18 @@ export const datasetsApi = {
     formData.append('file', file)
     return api.post('/datasets/detect-fields', formData)
   },
+  append: (
+    datasetId: number,
+    file: File,
+    skipDuplicates: boolean = false,
+  ) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('skip_duplicates', skipDuplicates.toString())
+    return api.post(`/datasets/${datasetId}/append`, formData, {
+      timeout: 30 * 60 * 1000,
+    })
+  },
 }
 
 // Items API
@@ -238,6 +250,20 @@ export const publicItemsApi = {
     publicApi.post(`/items/${id}/reject`, null, {
       params: sessionToken ? { session_token: sessionToken } : {},
     }),
+}
+
+// Reference Docs API (参考文档)
+export const referenceDocsApi = {
+  list: (datasetId: number) => api.get(`/reference-docs/dataset/${datasetId}`),
+  upload: (datasetId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/reference-docs/dataset/${datasetId}`, formData, {
+      timeout: 10 * 60 * 1000,
+    })
+  },
+  getViewUrl: (docId: number) => `${api.defaults.baseURL}/reference-docs/${docId}/view`,
+  delete: (docId: number) => api.delete(`/reference-docs/${docId}`),
 }
 
 // Folders API (目录管理)

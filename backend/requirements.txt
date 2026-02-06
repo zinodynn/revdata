@@ -17,6 +17,11 @@ bcrypt==3.2.2
 pandas==2.1.4
 orjson==3.9.10
 
+# Dedup / Vector Search
+faiss-cpu>=1.7.4
+httpx>=0.26.0
+numpy>=1.24.0
+
 # Validation
 pydantic==2.5.3
 pydantic-settings==2.1.0
