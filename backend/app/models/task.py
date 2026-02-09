@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime
+from sqlalchemy import JSON, Boolean, Column, DateTime, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -34,7 +34,7 @@ class Task(Base):
     status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING)
     priority = Column(Integer, default=0)  # 0=normal, 1=high, 2=urgent
     note = Column(Text, nullable=True)
-    due_date = Column(DateTime, nullable=True)
+    due_date = Column(DateTime(timezone=True), nullable=True)
 
     # 委派记录
     delegated_from_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
@@ -42,9 +42,9 @@ class Task(Base):
     # 是否已被派发者查看（用于提醒功能）
     reviewed_by_assigner = Column(Boolean, default=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     dataset = relationship("Dataset", back_populates="tasks")

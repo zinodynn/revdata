@@ -30,6 +30,7 @@ import {
   Spin,
   Statistic,
   Switch,
+  Table,
   Tabs,
   Tag,
   theme,
@@ -55,6 +56,7 @@ interface Dataset {
   item_count: number
   owner_id: number
   status: string
+  error_message?: string
   field_mapping: any
   review_config: any
   created_at: string
@@ -76,6 +78,7 @@ const statusColors: Record<string, string> = {
   reviewing: 'warning',
   completed: 'green',
   archived: 'default',
+  error: 'error',
 }
 
 const statusLabels: Record<string, string> = {
@@ -84,6 +87,7 @@ const statusLabels: Record<string, string> = {
   reviewing: '审核中',
   completed: '已完成',
   archived: '已归档',
+  error: '错误',
 }
 
 export default function DatasetDetailPage() {
@@ -112,6 +116,10 @@ export default function DatasetDetailPage() {
   const [dedupConfig, setDedupConfig] = useState<any>(null)
   const [savingDedup, setSavingDedup] = useState(false)
 
+  // 导入历史状态
+  const [importHistories, setImportHistories] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
 
   useEffect(() => {
@@ -119,6 +127,7 @@ export default function DatasetDetailPage() {
       fetchDataset()
       fetchPreview()
       if (isAdmin) fetchUsers()
+      fetchImportHistory()
     }
   }, [id])
 
@@ -155,6 +164,19 @@ export default function DatasetDetailPage() {
       message.error('获取数据集失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchImportHistory = async () => {
+    if (!id) return
+    setLoadingHistory(true)
+    try {
+      const res = await datasetsApi.getImportHistory(Number(id))
+      setImportHistories(res.data.items)
+    } catch (error: any) {
+      console.error('获取导入历史失败', error)
+    } finally {
+      setLoadingHistory(false)
     }
   }
 
@@ -218,6 +240,50 @@ export default function DatasetDetailPage() {
     } finally {
       setSavingDedup(false)
     }
+  }
+
+  // 加载默认去重配置
+  const handleLoadDedupDefaults = async () => {
+    try {
+      const res = await datasetsApi.getDedupDefaults()
+      setDedupConfig(res.data)
+      message.success('已加载默认配置')
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '加载失败')
+    }
+  }
+
+  // 保存当前配置为默认
+  const handleSaveAsDefault = async () => {
+    if (!dedupConfig) return
+    try {
+      await datasetsApi.setDedupDefaults(dedupConfig)
+      message.success('已保存为默认配置')
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '保存失败')
+    }
+  }
+
+  // 撤销导入
+  const handleRollbackImport = async (historyId: number) => {
+    if (!dataset) return
+    Modal.confirm({
+      title: '确认撤销导入',
+      content: '撤销后，该次导入的所有数据项将被删除，此操作不可恢复。确定要继续吗？',
+      okText: '确定',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await datasetsApi.rollbackImport(dataset.id, historyId)
+          message.success(`已撤销导入，删除了 ${res.data.deleted_items} 条数据`)
+          fetchDataset()
+          fetchImportHistory()
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || '撤销失败')
+        }
+      },
+    })
   }
 
   const handleExport = async (format: string) => {
@@ -375,6 +441,99 @@ export default function DatasetDetailPage() {
               </Space>
             </Card>
           )}
+
+          {/* 导入历史 */}
+          <Card title="导入历史" style={{ marginTop: 16 }} loading={loadingHistory}>
+            {importHistories.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#999' }}>
+                暂无导入记录
+              </div>
+            ) : (
+              <Table
+                dataSource={importHistories}
+                rowKey="id"
+                pagination={false}
+                size="small"
+                columns={[
+                  {
+                    title: '操作时间',
+                    dataIndex: 'created_at',
+                    width: 180,
+                    render: (date: string) => new Date(date).toLocaleString(),
+                  },
+                  {
+                    title: '类型',
+                    dataIndex: 'operation_type',
+                    width: 100,
+                    render: (type: string) => (
+                      <Tag color={type === 'upload' ? 'blue' : 'green'}>
+                        {type === 'upload' ? '初始上传' : '追加导入'}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: '文件名',
+                    dataIndex: 'filename',
+                  },
+                  {
+                    title: '文件总数',
+                    dataIndex: 'total_items',
+                    width: 100,
+                  },
+                  {
+                    title: '实际导入',
+                    dataIndex: 'imported_items',
+                    width: 100,
+                  },
+                  {
+                    title: '跳过重复',
+                    dataIndex: 'skipped_duplicates',
+                    width: 100,
+                    render: (count: number) => (count > 0 ? <Tag color="orange">{count}</Tag> : '-'),
+                  },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    width: 100,
+                    render: (status: string, record: any) => {
+                      const statusMap: any = {
+                        importing: { color: 'processing', text: '导入中' },
+                        completed: { color: 'success', text: record.is_active ? '已完成' : '已撤销' },
+                        failed: { color: 'error', text: '失败' },
+                      }
+                      const s = statusMap[status] || { color: 'default', text: status }
+                      return <Tag color={s.color}>{s.text}</Tag>
+                    },
+                  },
+                  {
+                    title: '操作',
+                    width: 120,
+                    render: (_: any, record: any) => {
+                      if (record.status !== 'completed') return '-'
+                      if (!record.is_active) {
+                        return <Tag color="default">已撤销</Tag>
+                      }
+                      if (record.operation_type === 'upload') {
+                        return <Tag color="default">不可撤销</Tag>
+                      }
+                      return isAdmin ? (
+                        <Button
+                          type="link"
+                          size="small"
+                          danger
+                          onClick={() => handleRollbackImport(record.id)}
+                        >
+                          撤销
+                        </Button>
+                      ) : (
+                        '-'
+                      )
+                    },
+                  },
+                ]}
+              />
+            )}
+          </Card>
         </div>
       ),
     },
@@ -553,13 +712,21 @@ export default function DatasetDetailPage() {
 
             {isAdmin && (
               <Form.Item>
-                <Button
-                  type="primary"
-                  onClick={handleSaveDedupConfig}
-                  loading={savingDedup}
-                >
-                  保存去重配置
-                </Button>
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={handleSaveDedupConfig}
+                    loading={savingDedup}
+                  >
+                    保存去重配置
+                  </Button>
+                  <Button onClick={handleLoadDedupDefaults}>
+                    加载默认配置
+                  </Button>
+                  <Button onClick={handleSaveAsDefault}>
+                    保存为默认配置
+                  </Button>
+                </Space>
               </Form.Item>
             )}
           </Form>

@@ -96,6 +96,7 @@ class DatasetResponse(BaseModel):
     item_count: int
     owner_id: int
     status: DatasetStatus
+    error_message: Optional[str] = None
     field_mapping: Optional[dict] = None
     review_config: Optional[dict] = None
     dedup_config: Optional[dict] = None

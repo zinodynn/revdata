@@ -513,11 +513,11 @@ export default function QACardUnified({
         key={index}
         style={{
           flex: 1,
-          padding: 16,
+          padding: 12,
           borderRadius: 12,
           background: bgColor,
           border: isEditing ? `2px solid ${editBorderColor}` : `1px solid ${borderColor}`,
-          minHeight: 150,
+          minHeight: 120,
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -528,7 +528,7 @@ export default function QACardUnified({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 12,
+            marginBottom: 8,
           }}
         >
           <div>
@@ -733,7 +733,7 @@ export default function QACardUnified({
       return (
         <div
           style={{
-            padding: 20,
+            padding: 12,
             borderRadius: 12,
             background: isDark ? '#2a2a2a' : '#f5f7fa',
             border: isEditing
@@ -748,7 +748,7 @@ export default function QACardUnified({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: 12,
+              marginBottom: 8,
             }}
           >
             <div>

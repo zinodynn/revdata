@@ -1,32 +1,32 @@
 import {
-    DeleteOutlined,
-    ExportOutlined,
-    EyeOutlined,
-    FolderOutlined,
-    KeyOutlined,
-    MoreOutlined,
-    PlusOutlined,
-    SendOutlined,
-    SettingOutlined,
-    UploadOutlined,
+  DeleteOutlined,
+  ExportOutlined,
+  EyeOutlined,
+  FolderOutlined,
+  KeyOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  SendOutlined,
+  SettingOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
 import {
-    Button,
-    Card,
-    Col,
-    Dropdown,
-    Form,
-    Input,
-    message,
-    Modal,
-    Row,
-    Space,
-    Spin,
-    Steps,
-    Table,
-    Tag,
-    Typography,
-    Upload,
+  Button,
+  Card,
+  Col,
+  Dropdown,
+  Form,
+  Input,
+  message,
+  Modal,
+  Row,
+  Space,
+  Spin,
+  Steps,
+  Table,
+  Tag,
+  Typography,
+  Upload,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -48,6 +48,7 @@ interface Dataset {
   format: string
   item_count: number
   status: string
+  error_message?: string
   created_at: string
 }
 
@@ -57,6 +58,7 @@ const statusColors: Record<string, string> = {
   reviewing: 'warning',
   completed: 'green',
   archived: 'default',
+  error: 'error',
 }
 
 const statusLabels: Record<string, string> = {
@@ -65,6 +67,7 @@ const statusLabels: Record<string, string> = {
   reviewing: '审核中',
   completed: '已完成',
   archived: '已归档',
+  error: '错误',
 }
 
 export default function DatasetsPage() {
@@ -272,9 +275,17 @@ export default function DatasetsPage() {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (status: string) => (
-        <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>
-      ),
+      render: (status: string, record: Dataset) => {
+        const tag = <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>
+        if (status === 'error' && record.error_message) {
+          return (
+            <span title={record.error_message} style={{ cursor: 'help' }}>
+              {tag}
+            </span>
+          )
+        }
+        return tag
+      },
     },
     {
       title: '创建时间',

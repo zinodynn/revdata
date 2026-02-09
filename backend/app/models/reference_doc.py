@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -15,7 +15,7 @@ class ReferenceDoc(Base):
     file_path = Column(String(500), nullable=False)  # 存储路径(相对 UPLOAD_DIR)
     file_type = Column(String(50), nullable=False)  # pdf/doc/docx
     file_size = Column(Integer, default=0)  # 文件大小(字节)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     dataset = relationship("Dataset", back_populates="reference_docs")

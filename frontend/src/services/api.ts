@@ -89,13 +89,14 @@ export const datasetsApi = {
   delete: (id: number) => api.delete(`/datasets/${id}`),
   move: (id: number, folderId: number | null) =>
     api.put(`/datasets/${id}/move`, { folder_id: folderId }),
-  upload: (file: File, name: string, description?: string) => {
+  upload: (file: File, name: string, description?: string, onUploadProgress?: (progressEvent: any) => void) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('name', name)
     if (description) formData.append('description', description)
     return api.post('/datasets/upload', formData, {
       timeout: 30 * 60 * 1000, // 30 minutes for large uploads
+      onUploadProgress,
     })
   },
   preview: (id: number, count = 5) => api.get(`/datasets/${id}/preview`, { params: { count } }),
@@ -116,6 +117,11 @@ export const datasetsApi = {
       timeout: 30 * 60 * 1000,
     })
   },
+  getStatus: (id: number) => api.get(`/datasets/${id}`),
+  getDedupDefaults: () => api.get('/datasets/dedup-defaults'),
+  setDedupDefaults: (config: any) => api.put('/datasets/dedup-defaults', config),
+  getImportHistory: (datasetId: number) => api.get(`/datasets/${datasetId}/import-history`),
+  rollbackImport: (datasetId: number, historyId: number) => api.post(`/datasets/${datasetId}/import-history/${historyId}/rollback`),
 }
 
 // Items API

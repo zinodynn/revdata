@@ -2,7 +2,7 @@ import enum
 import secrets
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime
+from sqlalchemy import Boolean, Column, DateTime, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
@@ -33,7 +33,7 @@ class ShareLink(Base):
     )
 
     # 有效期设置
-    expires_at = Column(DateTime, nullable=True)  # None 表示永不过期
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # None 表示永不过期
 
     # 访问限制
     max_access_count = Column(Integer, nullable=True)  # None 表示无限制
@@ -45,8 +45,8 @@ class ShareLink(Base):
     # 状态
     is_active = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     dataset = relationship("Dataset", backref="share_links")

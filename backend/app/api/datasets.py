@@ -13,9 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
+from app.core.global_config import get_dedup_defaults, set_dedup_defaults
 from app.models.data_item import DataItem, ItemStatus, ItemType
 from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
 from app.models.folder import Folder
+from app.models.import_history import ImportHistory, ImportOperationType, ImportStatus
 from app.models.task import Task
 from app.models.user import User, UserRole
 from app.schemas.dataset import (
@@ -250,16 +252,29 @@ async def upload_dataset(
     await db.commit()
     await db.refresh(dataset)
 
+    # 创建导入历史记录
+    import_history = ImportHistory(
+        dataset_id=dataset.id,
+        operation_type=ImportOperationType.UPLOAD,
+        filename=file.filename,
+        file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
+        status=ImportStatus.IMPORTING,
+        created_by=current_user.id,
+    )
+    db.add(import_history)
+    await db.commit()
+    await db.refresh(import_history)
+
     # 添加后台任务
     background_tasks.add_task(
-        process_dataset_import, dataset.id, file_path, is_zip, format_type
+        process_dataset_import, dataset.id, file_path, is_zip, format_type, import_history.id
     )
 
     return dataset
 
 
 async def process_dataset_import(
-    dataset_id: int, file_path: str, is_zip: bool, format_type: DatasetFormat
+    dataset_id: int, file_path: str, is_zip: bool, format_type: DatasetFormat, import_history_id: int
 ):
     """
     后台处理数据集导入任务
@@ -268,10 +283,15 @@ async def process_dataset_import(
     
     async with AsyncSessionLocal() as db:
         try:
-            # 获取数据集
+            # 获取数据集和导入历史记录
             result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
             dataset = result.scalar_one_or_none()
             if not dataset:
+                return
+            
+            history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+            import_history = history_result.scalar_one_or_none()
+            if not import_history:
                 return
 
             # 2. 如果是zip,解压并寻找数据文件
@@ -361,13 +381,43 @@ async def process_dataset_import(
             # 更新数据集状态
             dataset.item_count = len(items)
             dataset.status = DatasetStatus.READY
+            
+            # 更新导入历史记录
+            import_history.status = ImportStatus.COMPLETED
+            import_history.total_items = len(items)
+            import_history.imported_items = len(items)
+            import_history.start_seq = 1
+            import_history.end_seq = len(items)
+            import_history.completed_at = func.now()
+            
             await db.commit()
             
         except Exception as e:
             print(f"Error processing dataset {dataset_id}: {e}")
             await db.rollback()
-            await db.delete(dataset)
-            await db.commit()
+            
+            # 更新导入历史记录为失败
+            try:
+                history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+                import_history = history_result.scalar_one_or_none()
+                if import_history:
+                    import_history.status = ImportStatus.FAILED
+                    import_history.error_message = str(e)
+                    import_history.completed_at = func.now()
+                    await db.commit()
+            except:
+                pass
+            
+            # 设置数据集错误状态
+            try:
+                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                dataset = result.scalar_one_or_none()
+                if dataset:
+                    dataset.status = DatasetStatus.ERROR
+                    dataset.error_message = str(e)
+                    await db.commit()
+            except:
+                pass
 
 
 
@@ -761,8 +811,6 @@ async def append_dataset(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="数据集正在导入中，请等待完成后再追加",
         )
-
-    # 检测文件格式
     filename = file.filename.lower()
     if filename.endswith(".jsonl"):
         format_type = DatasetFormat.JSONL
@@ -791,6 +839,21 @@ async def append_dataset(
                 break
             buffer.write(chunk)
 
+    # 创建导入历史记录
+    import_history = ImportHistory(
+        dataset_id=dataset_id,
+        operation_type=ImportOperationType.APPEND,
+        filename=file.filename,
+        file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
+        status=ImportStatus.IMPORTING,
+        skip_duplicates=skip_duplicates,
+        dedup_config_snapshot=dataset.dedup_config,
+        created_by=current_user.id,
+    )
+    db.add(import_history)
+    await db.commit()
+    await db.refresh(import_history)
+
     # 在后台处理追加导入
     background_tasks.add_task(
         process_dataset_append,
@@ -798,6 +861,7 @@ async def append_dataset(
         file_path,
         format_type,
         skip_duplicates,
+        import_history.id,
     )
 
     return AppendResult(
@@ -813,6 +877,7 @@ async def process_dataset_append(
     file_path: str,
     format_type: DatasetFormat,
     skip_duplicates: bool,
+    import_history_id: int,
 ):
     """后台处理数据集追加导入"""
     import asyncio
@@ -946,14 +1011,84 @@ async def process_dataset_append(
                 await db.commit()
 
             # 更新数据集条目数
+            start_seq = current_max_seq + 1
+            end_seq = current_max_seq + len(items_to_add)
             dataset.item_count = (dataset.item_count or 0) + len(items_to_add)
+            
+            # 如果原状态是 completed，回退到 reviewing（新数据需要审核）
+            original_status = dataset.status
+            if original_status == DatasetStatus.COMPLETED:
+                dataset.status = DatasetStatus.REVIEWING
+                
+                # 更新关联的已完成任务，将其状态改回 in_progress
+                await db.execute(
+                    update(Task)
+                    .where(Task.dataset_id == dataset_id)
+                    .where(Task.status == "completed")
+                    .values(status="in_progress")
+                )
+            
+            # 更新导入历史记录
+            history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+            import_history = history_result.scalar_one_or_none()
+            if import_history:
+                import_history.status = ImportStatus.COMPLETED
+                import_history.total_items = len(items)
+                import_history.imported_items = len(items_to_add)
+                import_history.skipped_duplicates = skipped
+                import_history.start_seq = start_seq
+                import_history.end_seq = end_seq
+                import_history.completed_at = func.now()
+            
             await db.commit()
 
             print(
                 f"Dataset {dataset_id} append: "
-                f"file={len(items)}, added={len(items_to_add)}, skipped={skipped}"
+                f"file={len(items)}, added={len(items_to_add)}, skipped={skipped}, "
+                f"status_changed={original_status}->{dataset.status if original_status == DatasetStatus.COMPLETED else 'no change'}"
             )
 
         except Exception as e:
             print(f"Error appending to dataset {dataset_id}: {e}")
             await db.rollback()
+            
+            # 更新导入历史为失败
+            try:
+                history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+                import_history = history_result.scalar_one_or_none()
+                if import_history:
+                    import_history.status = ImportStatus.FAILED
+                    import_history.error_message = str(e)
+                    import_history.completed_at = func.now()
+                    await db.commit()
+            except:
+                pass
+
+
+@router.get("/dedup-defaults")
+async def get_dedup_defaults_api(current_user: User = Depends(get_current_user)):
+    """获取全局去重默认配置"""
+    defaults = get_dedup_defaults()
+    if defaults is None:
+        # 返回默认值
+        defaults = {
+            "enabled": False,
+            "use_embedding": False,
+            "embedding_api_url": "",
+            "embedding_api_key": "",
+            "embedding_model": "text-embedding-ada-002",
+            "embedding_batch_size": 32,
+            "embedding_concurrency": 1,
+            "similarity_threshold": 0.8,
+            "query_field": "question",
+        }
+    return defaults
+
+
+@router.put("/dedup-defaults")
+async def set_dedup_defaults_api(
+    config: dict, current_user: User = Depends(require_admin)
+):
+    """设置全局去重默认配置（仅管理员）"""
+    set_dedup_defaults(config)
+    return {"message": "去重默认配置已更新"}

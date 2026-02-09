@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy import JSON, Column, DateTime, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -23,6 +23,7 @@ class DatasetStatus(str, enum.Enum):
     REVIEWING = "reviewing"
     COMPLETED = "completed"
     ARCHIVED = "archived"
+    ERROR = "error"
 
 
 class DisplayMode(str, enum.Enum):
@@ -45,6 +46,7 @@ class Dataset(Base):
     item_count = Column(Integer, default=0)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     status = Column(SQLEnum(DatasetStatus), default=DatasetStatus.IMPORTING)
+    error_message = Column(Text, nullable=True)
 
     # 字段映射配置 (管理员配置)
     # {
@@ -85,8 +87,8 @@ class Dataset(Base):
     # 所属目录（可选，为空表示在根目录）
     folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     owner = relationship(

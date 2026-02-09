@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import auth, auth_codes, datasets, export, folders, items, reference_docs, share, tasks, users
+from app.api import auth, auth_codes, datasets, export, folders, import_history, items, reference_docs, share, tasks, users
 
 api_router = APIRouter()
 
@@ -12,5 +12,6 @@ api_router.include_router(tasks.router, prefix="/tasks", tags=["任务"])
 api_router.include_router(share.router, prefix="/share", tags=["分享"])
 api_router.include_router(export.router, prefix="/export", tags=["导出"])
 api_router.include_router(reference_docs.router, prefix="/reference-docs", tags=["参考文档"])
+api_router.include_router(import_history.router, tags=["导入历史"])
 api_router.include_router(users.router)
 api_router.include_router(auth_codes.router)
