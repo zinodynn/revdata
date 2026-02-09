@@ -99,6 +99,25 @@ export const datasetsApi = {
       onUploadProgress,
     })
   },
+  uploadDirectory: (
+    files: File[],
+    pathMapping: Record<string, string>,
+    baseFolderId?: number,
+    onUploadProgress?: (progressEvent: any) => void
+  ) => {
+    const formData = new FormData()
+    files.forEach((file) => {
+      formData.append('files', file)
+    })
+    formData.append('paths', JSON.stringify(pathMapping))
+    if (baseFolderId) {
+      formData.append('base_folder_id', baseFolderId.toString())
+    }
+    return api.post('/datasets/upload-directory', formData, {
+      timeout: 30 * 60 * 1000, // 30 minutes for large uploads
+      onUploadProgress,
+    })
+  },
   preview: (id: number, count = 5) => api.get(`/datasets/${id}/preview`, { params: { count } }),
   detectFields: (file: File) => {
     const formData = new FormData()

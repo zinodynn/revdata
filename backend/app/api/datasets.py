@@ -1092,3 +1092,205 @@ async def set_dedup_defaults_api(
     """设置全局去重默认配置（仅管理员）"""
     set_dedup_defaults(config)
     return {"message": "去重默认配置已更新"}
+
+
+# 文件类型过滤辅助函数
+def is_data_file(filename: str) -> bool:
+    """判断是否为数据文件"""
+    data_extensions = {'.jsonl', '.json', '.csv', '.tsv', '.parquet'}
+    return any(filename.lower().endswith(ext) for ext in data_extensions)
+
+
+def is_asset_file(filename: str) -> bool:
+    """判断是否为需要保留的资源文件（如图片）"""
+    asset_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
+    return any(filename.lower().endswith(ext) for ext in asset_extensions)
+
+
+def should_keep_file(filename: str) -> bool:
+    """判断文件是否应该保留"""
+    # 跳过隐藏文件和系统文件
+    if filename.startswith('.') or filename.startswith('__'):
+        return False
+    return is_data_file(filename) or is_asset_file(filename)
+
+
+async def get_or_create_folder(
+    db: AsyncSession,
+    folder_name: str,
+    parent_id: Optional[int],
+    owner_id: int
+) -> int:
+    """获取或创建目录"""
+    # 查找现有目录
+    result = await db.execute(
+        select(Folder).where(
+            Folder.name == folder_name,
+            Folder.parent_id == parent_id,
+            Folder.owner_id == owner_id
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing.id
+    
+    # 创建新目录
+    new_folder = Folder(
+        name=folder_name,
+        parent_id=parent_id,
+        owner_id=owner_id
+    )
+    db.add(new_folder)
+    await db.flush()
+    return new_folder.id
+
+
+@router.post(
+    "/upload-directory", 
+    response_model=dict,
+    status_code=status.HTTP_201_CREATED
+)
+async def upload_directory(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    paths: str = Form(...),  # JSON string of {filename: relative_path}
+    base_folder_id: Optional[int] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    上传目录并导入数据集
+    - 支持多文件批量上传
+    - 自动创建目录结构
+    - 数据文件创建 Dataset，图片等资源文件保留
+    - 权限：管理员创建的目录自动归属到该管理员，超级管理员可见所有
+    """
+    import json as json_lib
+    
+    try:
+        path_mapping = json_lib.loads(paths)
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="路径映射格式错误"
+        )
+    
+    # 基础上传目录
+    upload_id = str(uuid.uuid4())
+    base_dir = os.path.join(settings.UPLOAD_DIR, upload_id)
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # 按目录组织文件
+    folder_files: dict[str, list] = {}  # folder_path -> [(file_path, file_obj, filename)]
+    
+    for file in files:
+        filename = file.filename
+        if filename not in path_mapping:
+            continue
+        
+        relative_path = path_mapping[filename]
+        
+        # 跳过不需要的文件
+        if not should_keep_file(filename):
+            continue
+        
+        # 保存文件
+        full_path = os.path.join(base_dir, relative_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        
+        with open(full_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(1024 * 1024 * 10)  # 10MB chunks
+                if not chunk:
+                    break
+                buffer.write(chunk)
+        
+        # 解析目录路径
+        folder_path = os.path.dirname(relative_path)
+        if folder_path not in folder_files:
+            folder_files[folder_path] = []
+        folder_files[folder_path].append((full_path, file, filename))
+    
+    # 创建目录结构和数据集
+    created_datasets = []
+    
+    for folder_path, file_list in folder_files.items():
+        # 创建目录层级
+        current_parent_id = base_folder_id
+        
+        if folder_path and folder_path != '.':
+            parts = folder_path.split('/')
+            for part in parts:
+                if part:
+                    current_parent_id = await get_or_create_folder(
+                        db, part, current_parent_id, current_user.id
+                    )
+        
+        # 为每个数据文件创建数据集
+        for file_path, file_obj, filename in file_list:
+            if not is_data_file(filename):
+                # 资源文件（如图片）已保存，不创建 dataset
+                continue
+            
+            # 检测格式
+            if filename.endswith(".jsonl"):
+                format_type = DatasetFormat.JSONL
+            elif filename.endswith(".json"):
+                format_type = DatasetFormat.JSON
+            elif filename.endswith(".csv"):
+                format_type = DatasetFormat.CSV
+            elif filename.endswith(".tsv"):
+                format_type = DatasetFormat.TSV
+            else:
+                continue
+            
+            # 创建数据集
+            relative_file_path = os.path.relpath(file_path, settings.UPLOAD_DIR).replace("\\", "/")
+            dataset_name = os.path.splitext(filename)[0]
+            
+            dataset = Dataset(
+                name=dataset_name,
+                description=f"从目录上传: {folder_path or '根目录'}",
+                format=format_type,
+                source_file=relative_file_path,
+                owner_id=current_user.id,
+                folder_id=current_parent_id,
+                status=DatasetStatus.IMPORTING,
+            )
+            db.add(dataset)
+            await db.flush()
+            
+            # 创建导入历史
+            import_history = ImportHistory(
+                dataset_id=dataset.id,
+                operation_type=ImportOperationType.UPLOAD,
+                filename=filename,
+                file_size=os.path.getsize(file_path),
+                status=ImportStatus.IMPORTING,
+                created_by=current_user.id,
+            )
+            db.add(import_history)
+            await db.flush()
+            
+            # 添加后台任务
+            background_tasks.add_task(
+                process_dataset_import,
+                dataset.id,
+                file_path,
+                False,  # not zip
+                format_type,
+                import_history.id
+            )
+            
+            created_datasets.append({
+                "id": dataset.id,
+                "name": dataset.name,
+                "folder_path": folder_path
+            })
+    
+    await db.commit()
+    
+    return {
+        "message": f"成功上传 {len(created_datasets)} 个数据集",
+        "datasets": created_datasets
+    }

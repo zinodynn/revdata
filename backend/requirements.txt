@@ -17,6 +17,13 @@ bcrypt==3.2.2
 pandas==2.1.4
 orjson==3.9.10
 
+# Word to PDF Conversion (选择安装其中一种)
+# Windows 推荐: docx2pdf (基于 pywin32)
+docx2pdf>=0.1.8; sys_platform == 'win32'
+# 跨平台: pypandoc (需要系统安装 pandoc)
+pypandoc>=1.11
+# 备选方案: unoconv (需要 LibreOffice Python API)
+
 # Dedup / Vector Search
 faiss-cpu>=1.7.4
 httpx>=0.26.0

@@ -1,27 +1,27 @@
 import {
-  ArrowLeftOutlined,
-  CheckCircleOutlined,
-  DownloadOutlined,
-  FastForwardOutlined,
-  FlagOutlined,
-  LeftOutlined,
-  RightOutlined,
-  SendOutlined,
-  ShareAltOutlined,
+    ArrowLeftOutlined,
+    CheckCircleOutlined,
+    DownloadOutlined,
+    FastForwardOutlined,
+    FlagOutlined,
+    LeftOutlined,
+    RightOutlined,
+    SendOutlined,
+    ShareAltOutlined,
 } from '@ant-design/icons'
 import {
-  Button,
-  Card,
-  ConfigProvider,
-  Dropdown,
-  InputNumber,
-  Space,
-  Spin,
-  Statistic,
-  Tag,
-  Typography,
-  theme as antdTheme,
-  message,
+    Button,
+    Card,
+    ConfigProvider,
+    Dropdown,
+    InputNumber,
+    Space,
+    Spin,
+    Statistic,
+    Tag,
+    Typography,
+    theme as antdTheme,
+    message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
@@ -123,6 +123,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const [markedItemIds, setMarkedItemIds] = useState<number[]>([])
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [docPanelExpanded, setDocPanelExpanded] = useState(false)
 
   // 是否可编辑
   const canEdit = !shareToken || sharePermission === 'edit'
@@ -760,9 +761,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       <div
         style={{
           minHeight: '100vh',
-          padding: 24,
+          padding: '16px',
           background: isDark ? '#141414' : '#f0f2f5',
           color: isDark ? '#e8e8e8' : undefined,
+          paddingRight: docPanelExpanded ? `calc(50vw + 16px)` : '16px', // 半屏宽度 + padding
+          transition: 'padding-right 0.3s ease',
         }}
       >
         {/* 头部 */}
@@ -979,6 +982,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               onSave={handleSave}
               onCancel={handleCancel}
               readOnly={!canEdit}
+              hideImages={docPanelExpanded}
             />
           )}
         </Card>
@@ -1160,6 +1164,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         <DocumentViewer
           datasetId={parseInt(datasetId)}
           theme={appTheme}
+          onExpandChange={setDocPanelExpanded}
         />
       )}
       </div>

@@ -89,10 +89,47 @@ async def list_folders(
     current_user: User = Depends(get_current_user),
 ):
     """
-    获取当前用户的目录树
+    获取目录树
+    - 超级管理员可以查看所有目录
+    - 普通管理员只能查看自己创建的目录
     """
-    tree = await build_folder_tree(db, current_user.id)
-    return tree
+    from app.models.user import UserRole
+    
+    if current_user.role == UserRole.SUPER_ADMIN:
+        # 超级管理员：获取所有用户的目录树（合并显示）
+        # 这里简化处理：查询所有根目录
+        root_folders_result = await db.execute(
+            select(Folder)
+            .where(Folder.parent_id.is_(None))
+            .order_by(Folder.name)
+        )
+        root_folders = root_folders_result.scalars().all()
+        
+        tree = []
+        for folder in root_folders:
+            # 统计数据集数量
+            dataset_count_result = await db.execute(
+                select(func.count(Dataset.id)).where(Dataset.folder_id == folder.id)
+            )
+            dataset_count = dataset_count_result.scalar() or 0
+            
+            # 递归构建子树（使用原 owner_id）
+            children = await build_folder_tree(db, folder.owner_id, folder.id)
+            
+            tree.append(FolderTreeNode(
+                id=folder.id,
+                name=folder.name,
+                parent_id=folder.parent_id,
+                created_at=folder.created_at,
+                updated_at=folder.updated_at,
+                children=children,
+                dataset_count=dataset_count,
+            ))
+        return tree
+    else:
+        # 普通管理员：只看自己的目录
+        tree = await build_folder_tree(db, current_user.id)
+        return tree
 
 
 @router.post("", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)
