@@ -50,6 +50,7 @@ interface QACardUnifiedProps {
   onSave?: () => void
   onCancel?: () => void
   readOnly?: boolean
+  hideImages?: boolean // 是否隐藏左侧图片区域
 }
 
 /**
@@ -73,6 +74,7 @@ export default function QACardUnified({
   onSave,
   onCancel,
   readOnly = false,
+  hideImages = false,
 }: QACardUnifiedProps) {
   const isDark = theme === 'dark'
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -891,12 +893,12 @@ export default function QACardUnified({
   }
 
   // 最终渲染 Layout
-  if (imagesInfo) {
+  if (imagesInfo && !hideImages) {
     const currentImage = imagesInfo[activeImageIndex] || imagesInfo[0]
     return (
-      <div style={{ display: 'flex', gap: 24, paddingBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 24, paddingBottom: 24, transition: 'all 0.3s ease' }}>
         {/* 左侧图片区 - 占据 40% 或 固定宽度 */}
-        <div style={{ flex: '0 0 45%', maxWidth: '800px', minWidth: '300px' }}>
+        <div style={{ flex: '0 0 45%', maxWidth: '800px', minWidth: '300px', transition: 'all 0.3s ease' }}>
           <div style={{ position: 'sticky', top: 24, textAlign: 'center' }}>
             {/* 主图 */}
             <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>

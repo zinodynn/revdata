@@ -410,20 +410,66 @@ async def list_datasets(
     page: int = 1,
     page_size: int = 20,
     folder_id: Optional[int] = None,
+    keyword: Optional[str] = None,
+    status: Optional[str] = None,
+    format: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取数据集列表，支持按目录筛选"""
+    """
+    获取数据集列表，支持多种筛选条件
+    
+    参数：
+    - folder_id: 按目录筛选
+    - keyword: 关键词搜索（名称或描述）
+    - status: 按状态筛选
+    - format: 按格式筛选
+    - start_date: 开始日期（ISO格式）
+    - end_date: 结束日期（ISO格式）
+    """
     offset = (page - 1) * page_size
 
     # 构建查询条件
     conditions = []
+    
+    # 目录筛选
     if folder_id is not None:
         conditions.append(Dataset.folder_id == folder_id)
-    elif folder_id is None:
-        # 如果 folder_id 参数存在且为空字符串，筛选根目录下的数据集
-        # 注意: FastAPI 默认 None 表示未传参数
-        pass  # 返回所有数据集
+    
+    # 关键词搜索
+    if keyword:
+        keyword_pattern = f"%{keyword}%"
+        conditions.append(
+            (Dataset.name.ilike(keyword_pattern)) | 
+            (Dataset.description.ilike(keyword_pattern))
+        )
+    
+    # 状态筛选
+    if status:
+        conditions.append(Dataset.status == status)
+    
+    # 格式筛选
+    if format:
+        conditions.append(Dataset.format == format.lower())
+    
+    # 日期范围筛选
+    if start_date:
+        try:
+            from datetime import datetime
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            conditions.append(Dataset.created_at >= start_dt)
+        except ValueError:
+            pass
+    
+    if end_date:
+        try:
+            from datetime import datetime
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            conditions.append(Dataset.created_at <= end_dt)
+        except ValueError:
+            pass
 
     # 查询总数
     count_query = select(func.count(Dataset.id))

@@ -169,6 +169,20 @@ export default function TasksPage() {
           </Text>
         </div>
       ),
+      width:200,
+    },
+    {
+      title: '备注',
+      dataIndex: 'note',
+      ellipsis: true,
+      render: (note: string) => (
+        <Text 
+          ellipsis={{ tooltip: note }} 
+          style={{ maxWidth: '100%', display: 'block' }}
+        >
+          {note}
+        </Text>
+      ),
     },
     {
       title: '进度',
@@ -199,16 +213,10 @@ export default function TasksPage() {
       ),
     },
     {
-      title: '备注',
-      dataIndex: 'note',
-      ellipsis: true,
-      width: 150,
-    },
-    {
       title: '操作',
       width: 200,
       render: (_: any, record: Task) => (
-        <Space>
+        <Space wrap>
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
@@ -223,7 +231,7 @@ export default function TasksPage() {
             title="生成授权码委派他人审核"
             disabled={record.status === 'completed'}
           >
-            授权码
+            生成授权
           </Button>
         </Space>
       ),

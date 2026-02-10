@@ -945,19 +945,40 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         <Card
           className="review-card active"
           title={
-            <Space>
-              <span style={{ fontSize: 18, fontWeight: 600 }}>#{currentItem?.seq_num || '-'}</span>
-              <Tag>{currentItem?.item_type === 'qa' ? 'QA对话' : '纯文本'}</Tag>
-              <Tag color={statusColors[currentItem?.status || 'pending']}>
-                {statusLabels[currentItem?.status || 'pending']}
-              </Tag>
-              {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
-              {currentItem?.is_marked && (
-                <Tag color="purple" icon={<FlagOutlined />}>
-                  待定
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%' }}>
+              <Space>
+                <span style={{ fontSize: 18, fontWeight: 600 }}>#{currentItem?.seq_num || '-'}</span>
+                <Tag>{currentItem?.item_type === 'qa' ? 'QA对话' : '纯文本'}</Tag>
+                <Tag color={statusColors[currentItem?.status || 'pending']}>
+                  {statusLabels[currentItem?.status || 'pending']}
                 </Tag>
+                {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
+                {currentItem?.is_marked && (
+                  <Tag color="purple" icon={<FlagOutlined />}>
+                    待定
+                  </Tag>
+                )}
+              </Space>
+              {/* 描述字段区域 */}
+              {dataset?.description && (
+                <div style={{ 
+                  flex: 1, 
+                  marginLeft: 16,
+                  marginRight: 16,
+                  overflow: 'hidden',
+                  color: isDark ? '#999' : '#666',
+                  fontSize: 14,
+                }}>
+                  <Text 
+                    type="secondary" 
+                    ellipsis={{ tooltip: dataset.description }}
+                    style={{ maxWidth: '100%' }}
+                  >
+                    {dataset.description}
+                  </Text>
+                </div>
               )}
-            </Space>
+            </div>
           }
           extra={
             <Space>

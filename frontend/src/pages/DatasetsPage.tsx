@@ -6,6 +6,7 @@ import {
   KeyOutlined,
   MoreOutlined,
   PlusOutlined,
+  SearchOutlined,
   SendOutlined,
   SettingOutlined,
   UploadOutlined,
@@ -15,6 +16,7 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Dropdown,
   Form,
   Input,
@@ -26,10 +28,11 @@ import {
   Steps,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
 import CreateFolderModal from '../components/CreateFolderModal'
@@ -111,10 +114,32 @@ export default function DatasetsPage() {
   const [renameForm] = Form.useForm()
   const [directoryUploadModalOpen, setDirectoryUploadModalOpen] = useState(false)
 
-  const fetchDatasets = async (folderId?: number | null) => {
+  // 搜索和筛选相关state
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
+  const [formatFilter, setFormatFilter] = useState<string | undefined>(undefined)
+
+  const fetchDatasets = async (
+    folderId?: number | null,
+    keyword?: string,
+    status?: string,
+    format?: string,
+    startDate?: string,
+    endDate?: string
+  ) => {
     setLoading(true)
     try {
-      const res = await datasetsApi.list(1, 100, folderId)
+      const res = await datasetsApi.list(
+        1,
+        100, // 暂时获取较多数据，前端分页
+        folderId,
+        keyword,
+        status,
+        format,
+        startDate,
+        endDate
+      )
       setDatasets(res.data.items)
     } catch (error) {
       message.error('获取数据集失败')
@@ -126,6 +151,20 @@ export default function DatasetsPage() {
   useEffect(() => {
     fetchDatasets(selectedFolderId)
   }, [selectedFolderId])
+
+  // 应用筛选 - 当筛选条件变化时重新获取数据
+  const applyFilters = () => {
+    const startDate = dateRange?.[0]?.toISOString()
+    const endDate = dateRange?.[1]?.toISOString()
+    fetchDatasets(selectedFolderId, searchKeyword, statusFilter, formatFilter, startDate, endDate)
+  }
+
+  // 过滤数据集（前端过滤作为补充）
+  const filteredDatasets = useMemo(() => {
+    // 如果使用后端筛选，这里直接返回datasets
+    // 前端过滤仅在需要时使用
+    return datasets
+  }, [datasets])
 
   const handleUpload = async (values: any) => {
     if (!selectedFile) {
@@ -271,6 +310,11 @@ export default function DatasetsPage() {
     {
       title: '名称',
       dataIndex: 'name',
+      render: (name: string, record: Dataset) => (
+        <Tooltip title={record.description || '无描述'} placement="topLeft">
+          <span style={{ cursor: 'help' }}>{name}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '格式',
@@ -432,9 +476,78 @@ export default function DatasetsPage() {
         {/* 右侧数据集列表 */}
         <Col span={19}>
           <Card>
+            {/* 搜索和筛选栏 */}
+            <div style={{ marginBottom: 16 }}>
+              <Space wrap>
+                <Input
+                  placeholder="搜索名称或描述"
+                  prefix={<SearchOutlined />}
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  onPressEnter={applyFilters}
+                  style={{ width: 200 }}
+                  allowClear
+                />
+                <DatePicker.RangePicker
+                  placeholder={['开始日期', '结束日期']}
+                  value={dateRange}
+                  onChange={(dates) => setDateRange(dates as [any, any] | null)}
+                  style={{ width: 280 }}
+                />
+                <Dropdown
+                  menu={{
+                    items: [
+                      { key: 'all', label: '所有状态', onClick: () => setStatusFilter(undefined) },
+                      { key: 'importing', label: '导入中', onClick: () => setStatusFilter('importing') },
+                      { key: 'ready', label: '待审核', onClick: () => setStatusFilter('ready') },
+                      { key: 'reviewing', label: '审核中', onClick: () => setStatusFilter('reviewing') },
+                      { key: 'completed', label: '已完成', onClick: () => setStatusFilter('completed') },
+                      { key: 'archived', label: '已归档', onClick: () => setStatusFilter('archived') },
+                      { key: 'error', label: '错误', onClick: () => setStatusFilter('error') },
+                    ],
+                  }}
+                >
+                  <Button>
+                    状态: {statusFilter ? statusLabels[statusFilter] : '全部'}
+                  </Button>
+                </Dropdown>
+                <Dropdown
+                  menu={{
+                    items: [
+                      { key: 'all', label: '所有格式', onClick: () => setFormatFilter(undefined) },
+                      { key: 'jsonl', label: 'JSONL', onClick: () => setFormatFilter('jsonl') },
+                      { key: 'json', label: 'JSON', onClick: () => setFormatFilter('json') },
+                      { key: 'csv', label: 'CSV', onClick: () => setFormatFilter('csv') },
+                      { key: 'tsv', label: 'TSV', onClick: () => setFormatFilter('tsv') },
+                    ],
+                  }}
+                >
+                  <Button>
+                    格式: {formatFilter ? formatFilter.toUpperCase() : '全部'}
+                  </Button>
+                </Dropdown>
+                <Button type="primary" onClick={applyFilters} icon={<SearchOutlined />}>
+                  应用筛选
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSearchKeyword('')
+                    setDateRange(null)
+                    setStatusFilter(undefined)
+                    setFormatFilter(undefined)
+                    fetchDatasets(selectedFolderId)
+                  }}
+                >
+                  清除筛选
+                </Button>
+                <Tag color="blue">
+                  显示 {filteredDatasets.length} 个数据集
+                </Tag>
+              </Space>
+            </div>
             <Table
               columns={columns}
-              dataSource={datasets}
+              dataSource={filteredDatasets}
               rowKey="id"
               loading={loading}
               pagination={{ pageSize: 20 }}
