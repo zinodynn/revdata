@@ -60,5 +60,5 @@ class ImportHistory(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
-    dataset = relationship("Dataset", backref="import_histories")
+    dataset = relationship("Dataset", back_populates="import_histories")
     creator = relationship("User", backref="import_histories")

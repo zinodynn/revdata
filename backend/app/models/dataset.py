@@ -105,3 +105,6 @@ class Dataset(Base):
     reference_docs = relationship(
         "ReferenceDoc", back_populates="dataset", cascade="all, delete-orphan"
     )
+    import_histories = relationship(
+        "ImportHistory", cascade="all, delete-orphan"
+    )

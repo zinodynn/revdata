@@ -33,6 +33,7 @@ import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
 import CreateFolderModal from '../components/CreateFolderModal'
 import DelegateModal from '../components/DelegateModal'
+import DirectoryUploadModal from '../components/DirectoryUploadModal'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import FolderTree from '../components/FolderTree'
 import MoveFolderModal from '../components/MoveFolderModal'
@@ -104,6 +105,7 @@ export default function DatasetsPage() {
   const [renameFolderId, setRenameFolderId] = useState<number | null>(null)
   const [renameFolderName, setRenameFolderName] = useState('')
   const [renameForm] = Form.useForm()
+  const [directoryUploadModalOpen, setDirectoryUploadModalOpen] = useState(false)
 
   const fetchDatasets = async (folderId?: number | null) => {
     setLoading(true)
@@ -387,9 +389,18 @@ export default function DatasetsPage() {
           数据集列表
         </Title>
         {isAdmin && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
-            上传数据集
-          </Button>
+          <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
+              上传文件
+            </Button>
+            <Button 
+              type="default" 
+              icon={<FolderOutlined />} 
+              onClick={() => setDirectoryUploadModalOpen(true)}
+            >
+              上传目录
+            </Button>
+          </Space>
         )}
       </div>
 
@@ -434,6 +445,17 @@ export default function DatasetsPage() {
         datasetId={selectedDatasetId || 0}
         currentItemSeq={1}
         totalItems={datasets.find((d) => d.id === selectedDatasetId)?.item_count || 0}
+      />
+
+      {/* 目录上传模态框 */}
+      <DirectoryUploadModal
+        visible={directoryUploadModalOpen}
+        onCancel={() => setDirectoryUploadModalOpen(false)}
+        onUploadSuccess={() => {
+          fetchDatasets(selectedFolderId)
+          setFolderRefreshTrigger((prev) => prev + 1)
+        }}
+        currentFolderId={selectedFolderId}
       />
 
       <Modal

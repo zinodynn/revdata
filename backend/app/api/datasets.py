@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
+from app.core.dedup_config import DedupConfigManager
 from app.core.global_config import get_dedup_defaults, set_dedup_defaults
 from app.models.data_item import DataItem, ItemStatus, ItemType
 from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
@@ -458,6 +459,35 @@ async def list_datasets(
     return DatasetListResponse(
         items=datasets, total=total, page=page, page_size=page_size
     )
+
+
+@router.get("/dedup-defaults")
+async def get_dedup_defaults_api(current_user: User = Depends(get_current_user)):
+    """获取全局去重默认配置"""
+    defaults = get_dedup_defaults()
+    if defaults is None:
+        # 返回默认值
+        defaults = {
+            "enabled": False,
+            "use_embedding": False,
+            "embedding_api_url": "",
+            "embedding_api_key": "",
+            "embedding_model": "text-embedding-ada-002",
+            "embedding_batch_size": 32,
+            "embedding_concurrency": 1,
+            "similarity_threshold": 0.8,
+            "query_field": "question",
+        }
+    return defaults
+
+
+@router.put("/dedup-defaults")
+async def set_dedup_defaults_api(
+    config: dict, current_user: User = Depends(require_admin)
+):
+    """设置全局去重默认配置（仅管理员）"""
+    set_dedup_defaults(config)
+    return {"message": "去重默认配置已更新"}
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
@@ -931,19 +961,8 @@ async def process_dataset_append(
             dedup_config = dataset.dedup_config or {}
             
             if skip_duplicates:
-                # 确定去重配置：优先使用数据集已启用的配置，否则使用默认文本去重
-                is_configured = dedup_config.get("enabled", False)
-                
-                if is_configured:
-                    effective_config = dedup_config
-                else:
-                    # 默认配置：使用文本去重 (Jaccard)
-                    effective_config = {
-                        "enabled": True,
-                        "use_embedding": False,
-                        "query_field": "question",
-                        "similarity_threshold": 0.8
-                    }
+                # 使用配置管理器获取有效的去重配置（支持三层优先级）
+                effective_config = DedupConfigManager.merge_configs(dedup_config)
 
                 query_field = effective_config.get("query_field", "question")
                 threshold = effective_config.get("similarity_threshold", 0.8)
@@ -1065,35 +1084,6 @@ async def process_dataset_append(
                 pass
 
 
-@router.get("/dedup-defaults")
-async def get_dedup_defaults_api(current_user: User = Depends(get_current_user)):
-    """获取全局去重默认配置"""
-    defaults = get_dedup_defaults()
-    if defaults is None:
-        # 返回默认值
-        defaults = {
-            "enabled": False,
-            "use_embedding": False,
-            "embedding_api_url": "",
-            "embedding_api_key": "",
-            "embedding_model": "text-embedding-ada-002",
-            "embedding_batch_size": 32,
-            "embedding_concurrency": 1,
-            "similarity_threshold": 0.8,
-            "query_field": "question",
-        }
-    return defaults
-
-
-@router.put("/dedup-defaults")
-async def set_dedup_defaults_api(
-    config: dict, current_user: User = Depends(require_admin)
-):
-    """设置全局去重默认配置（仅管理员）"""
-    set_dedup_defaults(config)
-    return {"message": "去重默认配置已更新"}
-
-
 # 文件类型过滤辅助函数
 def is_data_file(filename: str) -> bool:
     """判断是否为数据文件"""
@@ -1175,6 +1165,12 @@ async def upload_directory(
             detail="路径映射格式错误"
         )
     
+    print(f"\n{'='*60}")
+    print(f"[upload_directory] START - Received {len(files)} files")
+    print(f"[upload_directory] path_mapping keys: {list(path_mapping.keys())}")
+    print(f"[upload_directory] path_mapping: {path_mapping}")
+    print(f"{'='*60}\n")
+    
     # 基础上传目录
     upload_id = str(uuid.uuid4())
     base_dir = os.path.join(settings.UPLOAD_DIR, upload_id)
@@ -1183,33 +1179,56 @@ async def upload_directory(
     # 按目录组织文件
     folder_files: dict[str, list] = {}  # folder_path -> [(file_path, file_obj, filename)]
     
-    for file in files:
+    for i, file in enumerate(files):
         filename = file.filename
+        in_mapping = filename in path_mapping
+        print(f"[upload_directory] [{i+1}/{len(files)}] file.filename='{filename}', in_mapping={in_mapping}")
+        
         if filename not in path_mapping:
+            print(f"  → ❌ Skipping - NOT in path_mapping")
             continue
         
         relative_path = path_mapping[filename]
+        should_keep = should_keep_file(filename)
+        is_data = is_data_file(filename)
+        is_asset = is_asset_file(filename)
+        
+        print(f"  → relative_path='{relative_path}'")
+        print(f"  → should_keep={should_keep}, is_data={is_data}, is_asset={is_asset}")
         
         # 跳过不需要的文件
-        if not should_keep_file(filename):
+        if not should_keep:
+            print(f"  → ❌ Skipping - not a data or asset file")
             continue
+        
+        print(f"  → ✅ File will be processed")
         
         # 保存文件
         full_path = os.path.join(base_dir, relative_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         
+        print(f"  → Saving to: {full_path}")
         with open(full_path, "wb") as buffer:
             while True:
                 chunk = await file.read(1024 * 1024 * 10)  # 10MB chunks
                 if not chunk:
                     break
                 buffer.write(chunk)
+        print(f"  → ✓ File saved, size: {os.path.getsize(full_path)} bytes")
         
         # 解析目录路径
         folder_path = os.path.dirname(relative_path)
         if folder_path not in folder_files:
             folder_files[folder_path] = []
         folder_files[folder_path].append((full_path, file, filename))
+    
+    # 调试日志：显示文件的文件夹分组
+    print(f"\n[upload_directory] folder_files grouping:")
+    for folder_path, file_list in folder_files.items():
+        print(f"  folder_path='{folder_path}' ({len(file_list)} files)")
+        for file_path, file_obj, filename in file_list:
+            print(f"    - {filename}")
+    print()
     
     # 创建目录结构和数据集
     created_datasets = []
@@ -1289,6 +1308,14 @@ async def upload_directory(
             })
     
     await db.commit()
+    
+    print(f"\n{'='*60}")
+    print(f"[upload_directory] COMPLETE")
+    print(f"  Total files received: {len(files)}")
+    print(f"  Folders created: {len(folder_files)}")
+    print(f"  Datasets created: {len(created_datasets)}")
+    print(f"  Created datasets: {[d['name'] for d in created_datasets]}")
+    print(f"{'='*60}\n")
     
     return {
         "message": f"成功上传 {len(created_datasets)} 个数据集",

@@ -144,21 +144,30 @@ export default function DatasetDetailPage() {
     try {
       const res = await datasetsApi.get(Number(id))
       setDataset(res.data)
-      // 初始化去重配置
+      
+      // 初始化去重配置（支持三级优先级）
       if (res.data.dedup_config) {
+        // 优先级 1：数据集级配置
         setDedupConfig(res.data.dedup_config)
       } else {
-        setDedupConfig({
-          enabled: false,
-          use_embedding: false,
-          embedding_api_url: '',
-          embedding_api_key: '',
-          embedding_model: 'text-embedding-ada-002',
-          embedding_batch_size: 32,
-          embedding_concurrency: 1,
-          similarity_threshold: 0.8,
-          query_field: 'question',
-        })
+        // 优先级 2/3：获取系统级配置（从后端返回，可能来自 .env 或 global_config.json）
+        try {
+          const defaultRes = await datasetsApi.getDedupDefaults()
+          setDedupConfig(defaultRes)
+        } catch {
+          // 最后的兜底：硬编码默认值
+          setDedupConfig({
+            enabled: false,
+            use_embedding: false,
+            embedding_api_url: '',
+            embedding_api_key: '',
+            embedding_model: 'text-embedding-ada-002',
+            embedding_batch_size: 32,
+            embedding_concurrency: 1,
+            similarity_threshold: 0.8,
+            query_field: 'question',
+          })
+        }
       }
     } catch (error) {
       message.error('获取数据集失败')

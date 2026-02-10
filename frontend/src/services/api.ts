@@ -113,6 +113,13 @@ export const datasetsApi = {
     if (baseFolderId) {
       formData.append('base_folder_id', baseFolderId.toString())
     }
+    
+    // 日志：显示正在发送的FormData
+    console.log('[api.uploadDirectory] FormData contents:')
+    console.log('  Files count:', files.length)
+    console.log('  Files:', files.map(f => ({ name: f.name, size: f.size })))
+    console.log('  Path mapping:', pathMapping)
+    
     return api.post('/datasets/upload-directory', formData, {
       timeout: 30 * 60 * 1000, // 30 minutes for large uploads
       onUploadProgress,

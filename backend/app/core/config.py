@@ -28,6 +28,19 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024 * 1024  # 10GB
     UPLOAD_DIR: str = "./uploads"
 
+    # Embedding API 配置（系统级默认）
+    EMBEDDING_API_URL: Optional[str] = None
+    EMBEDDING_API_KEY: Optional[str] = None
+    EMBEDDING_MODEL: str = "text-embedding-ada-002"
+    EMBEDDING_BATCH_SIZE: int = 32
+    EMBEDDING_CONCURRENCY: int = 1
+
+    # 去重默认配置（系统级）
+    DEDUP_ENABLED_BY_DEFAULT: bool = False
+    DEDUP_SIMILARITY_THRESHOLD: float = 0.8
+    DEDUP_QUERY_FIELD: str = "question"
+    DEDUP_USE_EMBEDDING_BY_DEFAULT: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = True
