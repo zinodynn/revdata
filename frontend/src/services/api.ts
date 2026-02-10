@@ -27,9 +27,16 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // 只在以下情况自动跳转登录：
+    // 1. 返回 401 错误
+    // 2. 请求不是登录接口（登录失败应该由登录页处理）
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout()
-      window.location.href = `${baseUrl}/login`
+      const isLoginRequest = error.config?.url?.includes('/auth/login')
+      if (!isLoginRequest) {
+        // Token 过期，自动登出并跳转到登录页
+        useAuthStore.getState().logout()
+        window.location.href = `${baseUrl}/login`
+      }
     }
     return Promise.reject(error)
   }
@@ -68,8 +75,25 @@ export const authApi = {
 
 // Datasets API
 export const datasetsApi = {
-  list: (page = 1, pageSize = 20, folderId?: number | null) =>
-    api.get('/datasets', { params: { page, page_size: pageSize, folder_id: folderId } }),
+  list: (
+    page = 1, 
+    pageSize = 20, 
+    folderId?: number | null,
+    keyword?: string,
+    status?: string,
+    format?: string,
+    startDate?: string,
+    endDate?: string
+  ) => {
+    const params: any = { page, page_size: pageSize }
+    if (folderId !== undefined && folderId !== null) params.folder_id = folderId
+    if (keyword) params.keyword = keyword
+    if (status) params.status = status
+    if (format) params.format = format
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    return api.get('/datasets', { params })
+  },
   get: (id: number) => api.get(`/datasets/${id}`),
   update: (
     id: number,
@@ -89,13 +113,40 @@ export const datasetsApi = {
   delete: (id: number) => api.delete(`/datasets/${id}`),
   move: (id: number, folderId: number | null) =>
     api.put(`/datasets/${id}/move`, { folder_id: folderId }),
-  upload: (file: File, name: string, description?: string) => {
+  upload: (file: File, name: string, description?: string, onUploadProgress?: (progressEvent: any) => void) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('name', name)
     if (description) formData.append('description', description)
     return api.post('/datasets/upload', formData, {
       timeout: 30 * 60 * 1000, // 30 minutes for large uploads
+      onUploadProgress,
+    })
+  },
+  uploadDirectory: (
+    files: File[],
+    pathMapping: Record<string, string>,
+    baseFolderId?: number,
+    onUploadProgress?: (progressEvent: any) => void
+  ) => {
+    const formData = new FormData()
+    files.forEach((file) => {
+      formData.append('files', file)
+    })
+    formData.append('paths', JSON.stringify(pathMapping))
+    if (baseFolderId) {
+      formData.append('base_folder_id', baseFolderId.toString())
+    }
+    
+    // 日志：显示正在发送的FormData
+    console.log('[api.uploadDirectory] FormData contents:')
+    console.log('  Files count:', files.length)
+    console.log('  Files:', files.map(f => ({ name: f.name, size: f.size })))
+    console.log('  Path mapping:', pathMapping)
+    
+    return api.post('/datasets/upload-directory', formData, {
+      timeout: 30 * 60 * 1000, // 30 minutes for large uploads
+      onUploadProgress,
     })
   },
   preview: (id: number, count = 5) => api.get(`/datasets/${id}/preview`, { params: { count } }),
@@ -104,6 +155,23 @@ export const datasetsApi = {
     formData.append('file', file)
     return api.post('/datasets/detect-fields', formData)
   },
+  append: (
+    datasetId: number,
+    file: File,
+    skipDuplicates: boolean = false,
+  ) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('skip_duplicates', skipDuplicates.toString())
+    return api.post(`/datasets/${datasetId}/append`, formData, {
+      timeout: 30 * 60 * 1000,
+    })
+  },
+  getStatus: (id: number) => api.get(`/datasets/${id}`),
+  getDedupDefaults: () => api.get('/datasets/dedup-defaults'),
+  setDedupDefaults: (config: any) => api.put('/datasets/dedup-defaults', config),
+  getImportHistory: (datasetId: number) => api.get(`/datasets/${datasetId}/import-history`),
+  rollbackImport: (datasetId: number, historyId: number) => api.post(`/datasets/${datasetId}/import-history/${historyId}/rollback`),
 }
 
 // Items API
@@ -238,6 +306,20 @@ export const publicItemsApi = {
     publicApi.post(`/items/${id}/reject`, null, {
       params: sessionToken ? { session_token: sessionToken } : {},
     }),
+}
+
+// Reference Docs API (参考文档)
+export const referenceDocsApi = {
+  list: (datasetId: number) => api.get(`/reference-docs/dataset/${datasetId}`),
+  upload: (datasetId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/reference-docs/dataset/${datasetId}`, formData, {
+      timeout: 10 * 60 * 1000,
+    })
+  },
+  getViewUrl: (docId: number) => `${api.defaults.baseURL}/reference-docs/${docId}/view`,
+  delete: (docId: number) => api.delete(`/reference-docs/${docId}`),
 }
 
 // Folders API (目录管理)

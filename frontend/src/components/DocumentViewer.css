@@ -1,0 +1,56 @@
+/* 文档查看器样式 */
+
+.doc-viewer-toggle-tab {
+  transition: all 0.3s ease;
+}
+
+.doc-viewer-toggle-tab:hover {
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.25);
+}
+
+/* 文档查看容器 */
+.doc-viewer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.doc-viewer-content {
+  flex: 1;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.doc-viewer-tabs {
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+
+/* 底部标签页滚动条样式 */
+.doc-viewer-tabs-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  box-sizing: border-box;
+}
+
+.doc-viewer-tabs-container::-webkit-scrollbar {
+  height: 4px;
+}
+
+.doc-viewer-tabs-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.doc-viewer-tabs-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.doc-viewer-tabs-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+

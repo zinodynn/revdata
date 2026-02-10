@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy import JSON, Column, DateTime, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -23,6 +23,7 @@ class DatasetStatus(str, enum.Enum):
     REVIEWING = "reviewing"
     COMPLETED = "completed"
     ARCHIVED = "archived"
+    ERROR = "error"
 
 
 class DisplayMode(str, enum.Enum):
@@ -45,6 +46,7 @@ class Dataset(Base):
     item_count = Column(Integer, default=0)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     status = Column(SQLEnum(DatasetStatus), default=DatasetStatus.IMPORTING)
+    error_message = Column(Text, nullable=True)
 
     # 字段映射配置 (管理员配置)
     # {
@@ -68,11 +70,25 @@ class Dataset(Base):
     # }
     review_config = Column(JSON, nullable=True, default=None)
 
+    # 去重配置
+    # {
+    #   "enabled": false,
+    #   "use_embedding": true,
+    #   "embedding_api_url": null,
+    #   "embedding_api_key": null,
+    #   "embedding_model": "text-embedding-ada-002",
+    #   "embedding_batch_size": 32,
+    #   "embedding_concurrency": 1,
+    #   "similarity_threshold": 0.8,
+    #   "query_field": "question"
+    # }
+    dedup_config = Column(JSON, nullable=True, default=None)
+
     # 所属目录（可选，为空表示在根目录）
     folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     owner = relationship(
@@ -85,4 +101,10 @@ class Dataset(Base):
     tasks = relationship("Task", back_populates="dataset", cascade="all, delete-orphan")
     auth_codes = relationship(
         "AuthCode", back_populates="dataset", cascade="all, delete-orphan"
+    )
+    reference_docs = relationship(
+        "ReferenceDoc", back_populates="dataset", cascade="all, delete-orphan"
+    )
+    import_histories = relationship(
+        "ImportHistory", cascade="all, delete-orphan"
     )

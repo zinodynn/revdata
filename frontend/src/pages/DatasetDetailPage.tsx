@@ -1,9 +1,12 @@
 import {
   ArrowLeftOutlined,
+  BookOutlined,
   DatabaseOutlined,
   EditOutlined,
   ExportOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
 } from '@ant-design/icons'
 import {
@@ -14,21 +17,30 @@ import {
   Col,
   ConfigProvider,
   Descriptions,
+  Form,
+  Input,
+  InputNumber,
   message,
   Modal,
+  Radio,
   Row,
   Select,
+  Slider,
   Space,
   Spin,
   Statistic,
+  Switch,
+  Table,
   Tabs,
   Tag,
   theme,
   Typography,
+  Upload,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
+import ReferenceDocsPanel from '../components/ReferenceDocsPanel'
 import { datasetsApi, exportApi, usersApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -44,6 +56,7 @@ interface Dataset {
   item_count: number
   owner_id: number
   status: string
+  error_message?: string
   field_mapping: any
   review_config: any
   created_at: string
@@ -65,6 +78,7 @@ const statusColors: Record<string, string> = {
   reviewing: 'warning',
   completed: 'green',
   archived: 'default',
+  error: 'error',
 }
 
 const statusLabels: Record<string, string> = {
@@ -73,6 +87,7 @@ const statusLabels: Record<string, string> = {
   reviewing: '审核中',
   completed: '已完成',
   archived: '已归档',
+  error: '错误',
 }
 
 export default function DatasetDetailPage() {
@@ -91,6 +106,20 @@ export default function DatasetDetailPage() {
   const [transferModalOpen, setTransferModalOpen] = useState(false)
   const [newOwnerId, setNewOwnerId] = useState<number | null>(null)
 
+  // 追加导入状态
+  const [appendModalOpen, setAppendModalOpen] = useState(false)
+  const [appendFile, setAppendFile] = useState<File | null>(null)
+  const [appendSkipDuplicates, setAppendSkipDuplicates] = useState(false)
+  const [appending, setAppending] = useState(false)
+
+  // 去重配置状态
+  const [dedupConfig, setDedupConfig] = useState<any>(null)
+  const [savingDedup, setSavingDedup] = useState(false)
+
+  // 导入历史状态
+  const [importHistories, setImportHistories] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
 
   useEffect(() => {
@@ -98,6 +127,7 @@ export default function DatasetDetailPage() {
       fetchDataset()
       fetchPreview()
       if (isAdmin) fetchUsers()
+      fetchImportHistory()
     }
   }, [id])
 
@@ -114,10 +144,48 @@ export default function DatasetDetailPage() {
     try {
       const res = await datasetsApi.get(Number(id))
       setDataset(res.data)
+      
+      // 初始化去重配置（支持三级优先级）
+      if (res.data.dedup_config) {
+        // 优先级 1：数据集级配置
+        setDedupConfig(res.data.dedup_config)
+      } else {
+        // 优先级 2/3：获取系统级配置（从后端返回，可能来自 .env 或 global_config.json）
+        try {
+          const defaultRes = await datasetsApi.getDedupDefaults()
+          setDedupConfig(defaultRes)
+        } catch {
+          // 最后的兜底：硬编码默认值
+          setDedupConfig({
+            enabled: false,
+            use_embedding: false,
+            embedding_api_url: '',
+            embedding_api_key: '',
+            embedding_model: 'text-embedding-ada-002',
+            embedding_batch_size: 32,
+            embedding_concurrency: 1,
+            similarity_threshold: 0.8,
+            query_field: 'question',
+          })
+        }
+      }
     } catch (error) {
       message.error('获取数据集失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchImportHistory = async () => {
+    if (!id) return
+    setLoadingHistory(true)
+    try {
+      const res = await datasetsApi.getImportHistory(Number(id))
+      setImportHistories(res.data.items)
+    } catch (error: any) {
+      console.error('获取导入历史失败', error)
+    } finally {
+      setLoadingHistory(false)
     }
   }
 
@@ -145,6 +213,86 @@ export default function DatasetDetailPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // 追加导入
+  const handleAppend = async () => {
+    if (!dataset || !appendFile) return
+    setAppending(true)
+    try {
+      await datasetsApi.append(dataset.id, appendFile, appendSkipDuplicates)
+      message.success('追加导入任务已提交，正在后台处理')
+      setAppendModalOpen(false)
+      setAppendFile(null)
+      setAppendSkipDuplicates(false)
+      // 延迟刷新，等待后台处理
+      setTimeout(() => fetchDataset(), 2000)
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '追加导入失败')
+    } finally {
+      setAppending(false)
+    }
+  }
+
+  // 保存去重配置
+  const handleSaveDedupConfig = async () => {
+    if (!dataset || !dedupConfig) return
+    setSavingDedup(true)
+    try {
+      await datasetsApi.update(dataset.id, {
+        dedup_config: dedupConfig,
+      } as any)
+      message.success('去重配置保存成功')
+      fetchDataset()
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '保存失败')
+    } finally {
+      setSavingDedup(false)
+    }
+  }
+
+  // 加载默认去重配置
+  const handleLoadDedupDefaults = async () => {
+    try {
+      const res = await datasetsApi.getDedupDefaults()
+      setDedupConfig(res.data)
+      message.success('已加载默认配置')
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '加载失败')
+    }
+  }
+
+  // 保存当前配置为默认
+  const handleSaveAsDefault = async () => {
+    if (!dedupConfig) return
+    try {
+      await datasetsApi.setDedupDefaults(dedupConfig)
+      message.success('已保存为默认配置')
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '保存失败')
+    }
+  }
+
+  // 撤销导入
+  const handleRollbackImport = async (historyId: number) => {
+    if (!dataset) return
+    Modal.confirm({
+      title: '确认撤销导入',
+      content: '撤销后，该次导入的所有数据项将被删除，此操作不可恢复。确定要继续吗？',
+      okText: '确定',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await datasetsApi.rollbackImport(dataset.id, historyId)
+          message.success(`已撤销导入，删除了 ${res.data.deleted_items} 条数据`)
+          fetchDataset()
+          fetchImportHistory()
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || '撤销失败')
+        }
+      },
+    })
   }
 
   const handleExport = async (format: string) => {
@@ -302,6 +450,99 @@ export default function DatasetDetailPage() {
               </Space>
             </Card>
           )}
+
+          {/* 导入历史 */}
+          <Card title="导入历史" style={{ marginTop: 16 }} loading={loadingHistory}>
+            {importHistories.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#999' }}>
+                暂无导入记录
+              </div>
+            ) : (
+              <Table
+                dataSource={importHistories}
+                rowKey="id"
+                pagination={false}
+                size="small"
+                columns={[
+                  {
+                    title: '操作时间',
+                    dataIndex: 'created_at',
+                    width: 180,
+                    render: (date: string) => new Date(date).toLocaleString(),
+                  },
+                  {
+                    title: '类型',
+                    dataIndex: 'operation_type',
+                    width: 100,
+                    render: (type: string) => (
+                      <Tag color={type === 'upload' ? 'blue' : 'green'}>
+                        {type === 'upload' ? '初始上传' : '追加导入'}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: '文件名',
+                    dataIndex: 'filename',
+                  },
+                  {
+                    title: '文件总数',
+                    dataIndex: 'total_items',
+                    width: 100,
+                  },
+                  {
+                    title: '实际导入',
+                    dataIndex: 'imported_items',
+                    width: 100,
+                  },
+                  {
+                    title: '跳过重复',
+                    dataIndex: 'skipped_duplicates',
+                    width: 100,
+                    render: (count: number) => (count > 0 ? <Tag color="orange">{count}</Tag> : '-'),
+                  },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    width: 100,
+                    render: (status: string, record: any) => {
+                      const statusMap: any = {
+                        importing: { color: 'processing', text: '导入中' },
+                        completed: { color: 'success', text: record.is_active ? '已完成' : '已撤销' },
+                        failed: { color: 'error', text: '失败' },
+                      }
+                      const s = statusMap[status] || { color: 'default', text: status }
+                      return <Tag color={s.color}>{s.text}</Tag>
+                    },
+                  },
+                  {
+                    title: '操作',
+                    width: 120,
+                    render: (_: any, record: any) => {
+                      if (record.status !== 'completed') return '-'
+                      if (!record.is_active) {
+                        return <Tag color="default">已撤销</Tag>
+                      }
+                      if (record.operation_type === 'upload') {
+                        return <Tag color="default">不可撤销</Tag>
+                      }
+                      return isAdmin ? (
+                        <Button
+                          type="link"
+                          size="small"
+                          danger
+                          onClick={() => handleRollbackImport(record.id)}
+                        >
+                          撤销
+                        </Button>
+                      ) : (
+                        '-'
+                      )
+                    },
+                  },
+                ]}
+              />
+            )}
+          </Card>
         </div>
       ),
     },
@@ -326,13 +567,202 @@ export default function DatasetDetailPage() {
         <Spin />
       ),
     },
+    {
+      key: 'dedup',
+      label: (
+        <span>
+          <SafetyCertificateOutlined />
+          去重设置
+        </span>
+      ),
+      children: dedupConfig ? (
+        <Card>
+          <Form layout="vertical">
+            <Form.Item label="启用去重">
+              <Switch
+                checked={dedupConfig.enabled}
+                onChange={(v) => setDedupConfig({ ...dedupConfig, enabled: v })}
+                disabled={!isAdmin}
+              />
+            </Form.Item>
+
+            {dedupConfig.enabled && (
+              <>
+                <Form.Item label="去重模式">
+                  <Radio.Group
+                    value={dedupConfig.use_embedding ? 'embedding' : 'text'}
+                    onChange={(e) =>
+                      setDedupConfig({
+                        ...dedupConfig,
+                        use_embedding: e.target.value === 'embedding',
+                      })
+                    }
+                    disabled={!isAdmin}
+                  >
+                    <Radio value="text">文本相似度 (Jaccard)</Radio>
+                    <Radio value="embedding">Embedding 向量 (需配置 API)</Radio>
+                  </Radio.Group>
+                </Form.Item>
+
+                {dedupConfig.use_embedding && (
+                  <>
+                    <Form.Item label="Embedding API URL" required>
+                      <Input
+                        value={dedupConfig.embedding_api_url}
+                        onChange={(e) =>
+                          setDedupConfig({
+                            ...dedupConfig,
+                            embedding_api_url: e.target.value,
+                          })
+                        }
+                        placeholder="https://api.openai.com/v1/embeddings"
+                        disabled={!isAdmin}
+                      />
+                    </Form.Item>
+                    <Form.Item label="API Key">
+                      <Input.Password
+                        value={dedupConfig.embedding_api_key}
+                        onChange={(e) =>
+                          setDedupConfig({
+                            ...dedupConfig,
+                            embedding_api_key: e.target.value,
+                          })
+                        }
+                        placeholder="sk-..."
+                        disabled={!isAdmin}
+                      />
+                    </Form.Item>
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <Form.Item label="模型名称">
+                          <Input
+                            value={dedupConfig.embedding_model}
+                            onChange={(e) =>
+                              setDedupConfig({
+                                ...dedupConfig,
+                                embedding_model: e.target.value,
+                              })
+                            }
+                            disabled={!isAdmin}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item label="批量大小">
+                          <InputNumber
+                            value={dedupConfig.embedding_batch_size}
+                            min={1}
+                            max={100}
+                            onChange={(v) =>
+                              setDedupConfig({
+                                ...dedupConfig,
+                                embedding_batch_size: v,
+                              })
+                            }
+                            style={{ width: '100%' }}
+                            disabled={!isAdmin}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item label="并发数">
+                          <InputNumber
+                            value={dedupConfig.embedding_concurrency}
+                            min={1}
+                            max={10}
+                            onChange={(v) =>
+                              setDedupConfig({
+                                ...dedupConfig,
+                                embedding_concurrency: v,
+                              })
+                            }
+                            style={{ width: '100%' }}
+                            disabled={!isAdmin}
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </>
+                )}
+
+                <Form.Item label={`相似度阈值: ${dedupConfig.similarity_threshold}`}>
+                  <Slider
+                    value={dedupConfig.similarity_threshold}
+                    min={0.5}
+                    max={1.0}
+                    step={0.05}
+                    onChange={(v) =>
+                      setDedupConfig({ ...dedupConfig, similarity_threshold: v })
+                    }
+                    marks={{ 0.5: '0.5', 0.8: '0.8', 1.0: '1.0' }}
+                    disabled={!isAdmin}
+                  />
+                </Form.Item>
+
+                <Form.Item label="比较字段">
+                  <Select
+                    value={dedupConfig.query_field}
+                    onChange={(v) =>
+                      setDedupConfig({ ...dedupConfig, query_field: v })
+                    }
+                    disabled={!isAdmin}
+                    style={{ width: 200 }}
+                  >
+                    {(previewData?.detected_fields || []).map((f) => (
+                      <Select.Option key={f} value={f}>
+                        {f}
+                      </Select.Option>
+                    ))}
+                    <Select.Option value="question">question (默认)</Select.Option>
+                  </Select>
+                </Form.Item>
+              </>
+            )}
+
+            {isAdmin && (
+              <Form.Item>
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={handleSaveDedupConfig}
+                    loading={savingDedup}
+                  >
+                    保存去重配置
+                  </Button>
+                  <Button onClick={handleLoadDedupDefaults}>
+                    加载默认配置
+                  </Button>
+                  <Button onClick={handleSaveAsDefault}>
+                    保存为默认配置
+                  </Button>
+                </Space>
+              </Form.Item>
+            )}
+          </Form>
+        </Card>
+      ) : (
+        <Spin />
+      ),
+    },
+    {
+      key: 'docs',
+      label: (
+        <span>
+          <BookOutlined />
+          参考文档
+        </span>
+      ),
+      children: (
+        <ReferenceDocsPanel datasetId={dataset.id} readOnly={!isAdmin} />
+      ),
+    },
   ]
 
   // 深色/浅色主题配置
   const darkTheme = {
     algorithm: theme.darkAlgorithm,
     token: {
-      colorPrimary: '#6eb9ffff',
+      colorPrimary: '#1890ff',
       colorBgContainer: '#1f1f1f',
       colorBgLayout: '#141414',
       colorText: '#e8e8e8',
@@ -343,7 +773,7 @@ export default function DatasetDetailPage() {
   const lightTheme = {
     algorithm: theme.defaultAlgorithm,
     token: {
-      colorPrimary: '#6eb9ffff',
+      colorPrimary: '#1890ff',
     },
   }
 
@@ -391,6 +821,11 @@ export default function DatasetDetailPage() {
                 配置映射
               </Button>
             )}
+            {isAdmin && (
+              <Button icon={<PlusOutlined />} onClick={() => setAppendModalOpen(true)}>
+                追加数据
+              </Button>
+            )}
           </Space>
         }
       >
@@ -431,6 +866,61 @@ export default function DatasetDetailPage() {
               </Select.Option>
             ))}
         </Select>
+      </Modal>
+
+      {/* 追加导入模态框 */}
+      <Modal
+        title="追加导入数据"
+        open={appendModalOpen}
+        onCancel={() => {
+          setAppendModalOpen(false)
+          setAppendFile(null)
+          setAppendSkipDuplicates(false)
+        }}
+        onOk={handleAppend}
+        okText="开始导入"
+        cancelText="取消"
+        okButtonProps={{ disabled: !appendFile, loading: appending }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Text>
+            当前数据集已有 <strong>{dataset?.item_count}</strong> 条数据，追加的数据将按序号接续。
+          </Typography.Text>
+        </div>
+        <Upload.Dragger
+          beforeUpload={(file) => {
+            setAppendFile(file)
+            return false
+          }}
+          showUploadList={!!appendFile}
+          fileList={
+            appendFile
+              ? [{ uid: '-1', name: appendFile.name, status: 'done' as const }]
+              : []
+          }
+          onRemove={() => setAppendFile(null)}
+          accept=".jsonl,.json,.csv,.tsv"
+          maxCount={1}
+        >
+          <p className="ant-upload-text">点击或拖拽文件到此处</p>
+          <p className="ant-upload-hint">支持 JSONL、JSON、CSV、TSV 格式</p>
+        </Upload.Dragger>
+        <div style={{ marginTop: 16 }}>
+          <Space>
+            <Switch
+              checked={appendSkipDuplicates}
+              onChange={setAppendSkipDuplicates}
+            />
+            <Typography.Text>跳过重复项（基于去重设置）</Typography.Text>
+          </Space>
+          {appendSkipDuplicates && !dedupConfig?.enabled && (
+            <div style={{ marginTop: 8 }}>
+              <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                ⚠ 未配置去重规则，将使用默认文本相似度(阈值0.8)进行去重
+              </Typography.Text>
+            </div>
+          )}
+        </div>
       </Modal>
       </div>
     </ConfigProvider>

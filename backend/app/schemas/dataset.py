@@ -54,13 +54,37 @@ class DatasetCreate(BaseModel):
     review_config: Optional[ReviewConfig] = None
 
 
+class DedupConfig(BaseModel):
+    """去重配置"""
+
+    enabled: bool = False
+    use_embedding: bool = False  # True 用 embedding, False 用文本相似度
+    embedding_api_url: Optional[str] = None
+    embedding_api_key: Optional[str] = None
+    embedding_model: str = "text-embedding-ada-002"
+    embedding_batch_size: int = 32
+    embedding_concurrency: int = 1
+    similarity_threshold: float = 0.8
+    query_field: str = "question"  # 用于去重比较的字段
+
+
 class DatasetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     field_mapping: Optional[FieldMapping] = None
     review_config: Optional[ReviewConfig] = None
+    dedup_config: Optional[DedupConfig] = None
     status: Optional[DatasetStatus] = None
     owner_id: Optional[int] = None
+
+
+class AppendResult(BaseModel):
+    """追加导入结果"""
+
+    total_in_file: int  # 文件中的总条目数
+    appended: int  # 实际追加的条目数
+    skipped_duplicates: int  # 跳过的重复条目数
+    new_total: int  # 追加后数据集总条目数
 
 
 class DatasetResponse(BaseModel):
@@ -72,8 +96,10 @@ class DatasetResponse(BaseModel):
     item_count: int
     owner_id: int
     status: DatasetStatus
+    error_message: Optional[str] = None
     field_mapping: Optional[dict] = None
     review_config: Optional[dict] = None
+    dedup_config: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
@@ -101,3 +127,6 @@ class FieldDetectionResponse(BaseModel):
     sample_data: List[dict]  # 样本数据(前3条)
     suggested_mapping: FieldMapping  # 建议的映射配置
     item_count_estimate: int  # 估算条目数
+    warnings: Optional[List[str]] = None  # 检测到的警告和建议
+    format_info: Optional[dict] = None  # 格式分析信息
+    field_coverage: Optional[dict] = None  # 字段覆盖率

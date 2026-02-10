@@ -37,10 +37,33 @@ export default function LoginPage() {
 
       // 保存认证状态
       setAuth(access_token, user)
-      message.success('登录成功')
-      navigate('/')
+      message.success('登录成功，正在跳转...')
+      // 延迟导航，让用户看到成功提示
+      setTimeout(() => {
+        navigate('/')
+      }, 500)
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '登录失败')
+      // 登录失败，清除临时token
+      useAuthStore.setState({ token: null })
+      
+      // 获取详细的错误信息
+      let errorMsg = '登录失败'
+      if (error.response?.data?.detail) {
+        errorMsg = error.response.data.detail
+      } else if (error.response?.status === 401) {
+        errorMsg = '用户名或密码错误'
+      } else if (error.response?.status === 422) {
+        errorMsg = '用户名或密码格式不正确'
+      } else if (error.response?.status === 400) {
+        errorMsg = error.response.data?.detail || '请求参数错误'
+      } else if (error.message === 'Network Error') {
+        errorMsg = '网络连接失败，请检查网络后重试'
+      } else if (error.code === 'ECONNABORTED') {
+        errorMsg = '请求超时，请稍后重试'
+      }
+      
+      message.error(errorMsg)
+      console.error('登录错误:', error)
     } finally {
       setLoading(false)
     }

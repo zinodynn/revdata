@@ -1,38 +1,43 @@
 import {
-    DeleteOutlined,
-    ExportOutlined,
-    EyeOutlined,
-    FolderOutlined,
-    KeyOutlined,
-    MoreOutlined,
-    PlusOutlined,
-    SendOutlined,
-    SettingOutlined,
-    UploadOutlined,
+  DeleteOutlined,
+  ExportOutlined,
+  EyeOutlined,
+  FolderOutlined,
+  KeyOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  SendOutlined,
+  SettingOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
 import {
-    Button,
-    Card,
-    Col,
-    Dropdown,
-    Form,
-    Input,
-    message,
-    Modal,
-    Row,
-    Space,
-    Spin,
-    Steps,
-    Table,
-    Tag,
-    Typography,
-    Upload,
+  Alert,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Dropdown,
+  Form,
+  Input,
+  message,
+  Modal,
+  Row,
+  Space,
+  Spin,
+  Steps,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  Upload,
 } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
 import CreateFolderModal from '../components/CreateFolderModal'
 import DelegateModal from '../components/DelegateModal'
+import DirectoryUploadModal from '../components/DirectoryUploadModal'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import FolderTree from '../components/FolderTree'
 import MoveFolderModal from '../components/MoveFolderModal'
@@ -48,6 +53,7 @@ interface Dataset {
   format: string
   item_count: number
   status: string
+  error_message?: string
   created_at: string
 }
 
@@ -57,6 +63,7 @@ const statusColors: Record<string, string> = {
   reviewing: 'warning',
   completed: 'green',
   archived: 'default',
+  error: 'error',
 }
 
 const statusLabels: Record<string, string> = {
@@ -65,6 +72,7 @@ const statusLabels: Record<string, string> = {
   reviewing: '审核中',
   completed: '已完成',
   archived: '已归档',
+  error: '错误',
 }
 
 export default function DatasetsPage() {
@@ -82,6 +90,9 @@ export default function DatasetsPage() {
   const [fieldMapping, setFieldMapping] = useState<FieldMapping | null>(null)
   const [reviewConfig, setReviewConfig] = useState<ReviewConfig | null>(null)
   const [detecting, setDetecting] = useState(false)
+  const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
+  const [formatInfo, setFormatInfo] = useState<any>(null)
+  const [fieldCoverage, setFieldCoverage] = useState<any>(null)
   const [authCodeModalOpen, setAuthCodeModalOpen] = useState(false)
   const [delegateModalOpen, setDelegateModalOpen] = useState(false)
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null)
@@ -101,11 +112,34 @@ export default function DatasetsPage() {
   const [renameFolderId, setRenameFolderId] = useState<number | null>(null)
   const [renameFolderName, setRenameFolderName] = useState('')
   const [renameForm] = Form.useForm()
+  const [directoryUploadModalOpen, setDirectoryUploadModalOpen] = useState(false)
 
-  const fetchDatasets = async (folderId?: number | null) => {
+  // 搜索和筛选相关state
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
+  const [formatFilter, setFormatFilter] = useState<string | undefined>(undefined)
+
+  const fetchDatasets = async (
+    folderId?: number | null,
+    keyword?: string,
+    status?: string,
+    format?: string,
+    startDate?: string,
+    endDate?: string
+  ) => {
     setLoading(true)
     try {
-      const res = await datasetsApi.list(1, 100, folderId)
+      const res = await datasetsApi.list(
+        1,
+        100, // 暂时获取较多数据，前端分页
+        folderId,
+        keyword,
+        status,
+        format,
+        startDate,
+        endDate
+      )
       setDatasets(res.data.items)
     } catch (error) {
       message.error('获取数据集失败')
@@ -117,6 +151,20 @@ export default function DatasetsPage() {
   useEffect(() => {
     fetchDatasets(selectedFolderId)
   }, [selectedFolderId])
+
+  // 应用筛选 - 当筛选条件变化时重新获取数据
+  const applyFilters = () => {
+    const startDate = dateRange?.[0]?.toISOString()
+    const endDate = dateRange?.[1]?.toISOString()
+    fetchDatasets(selectedFolderId, searchKeyword, statusFilter, formatFilter, startDate, endDate)
+  }
+
+  // 过滤数据集（前端过滤作为补充）
+  const filteredDatasets = useMemo(() => {
+    // 如果使用后端筛选，这里直接返回datasets
+    // 前端过滤仅在需要时使用
+    return datasets
+  }, [datasets])
 
   const handleUpload = async (values: any) => {
     if (!selectedFile) {
@@ -157,6 +205,9 @@ export default function DatasetsPage() {
       setSampleData(res.data.sample_data)
       setSuggestedMapping(res.data.suggested_mapping)
       setFieldMapping(res.data.suggested_mapping)
+      setDetectionWarnings(res.data.warnings || [])
+      setFormatInfo(res.data.format_info)
+      setFieldCoverage(res.data.field_coverage)
       setCurrentStep(1)
     } catch (error: any) {
       message.error(error.response?.data?.detail || '文件解析失败')
@@ -175,6 +226,9 @@ export default function DatasetsPage() {
     setSuggestedMapping(null)
     setFieldMapping(null)
     setReviewConfig(null)
+    setDetectionWarnings([])
+    setFormatInfo(null)
+    setFieldCoverage(null)
     form.resetFields()
   }
 
@@ -256,6 +310,11 @@ export default function DatasetsPage() {
     {
       title: '名称',
       dataIndex: 'name',
+      render: (name: string, record: Dataset) => (
+        <Tooltip title={record.description || '无描述'} placement="topLeft">
+          <span style={{ cursor: 'help' }}>{name}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '格式',
@@ -272,9 +331,17 @@ export default function DatasetsPage() {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (status: string) => (
-        <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>
-      ),
+      render: (status: string, record: Dataset) => {
+        const tag = <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>
+        if (status === 'error' && record.error_message) {
+          return (
+            <span title={record.error_message} style={{ cursor: 'help' }}>
+              {tag}
+            </span>
+          )
+        }
+        return tag
+      },
     },
     {
       title: '创建时间',
@@ -376,9 +443,18 @@ export default function DatasetsPage() {
           数据集列表
         </Title>
         {isAdmin && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
-            上传数据集
-          </Button>
+          <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
+              上传文件
+            </Button>
+            <Button 
+              type="default" 
+              icon={<FolderOutlined />} 
+              onClick={() => setDirectoryUploadModalOpen(true)}
+            >
+              上传目录
+            </Button>
+          </Space>
         )}
       </div>
 
@@ -400,9 +476,78 @@ export default function DatasetsPage() {
         {/* 右侧数据集列表 */}
         <Col span={19}>
           <Card>
+            {/* 搜索和筛选栏 */}
+            <div style={{ marginBottom: 16 }}>
+              <Space wrap>
+                <Input
+                  placeholder="搜索名称或描述"
+                  prefix={<SearchOutlined />}
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  onPressEnter={applyFilters}
+                  style={{ width: 200 }}
+                  allowClear
+                />
+                <DatePicker.RangePicker
+                  placeholder={['开始日期', '结束日期']}
+                  value={dateRange}
+                  onChange={(dates) => setDateRange(dates as [any, any] | null)}
+                  style={{ width: 280 }}
+                />
+                <Dropdown
+                  menu={{
+                    items: [
+                      { key: 'all', label: '所有状态', onClick: () => setStatusFilter(undefined) },
+                      { key: 'importing', label: '导入中', onClick: () => setStatusFilter('importing') },
+                      { key: 'ready', label: '待审核', onClick: () => setStatusFilter('ready') },
+                      { key: 'reviewing', label: '审核中', onClick: () => setStatusFilter('reviewing') },
+                      { key: 'completed', label: '已完成', onClick: () => setStatusFilter('completed') },
+                      { key: 'archived', label: '已归档', onClick: () => setStatusFilter('archived') },
+                      { key: 'error', label: '错误', onClick: () => setStatusFilter('error') },
+                    ],
+                  }}
+                >
+                  <Button>
+                    状态: {statusFilter ? statusLabels[statusFilter] : '全部'}
+                  </Button>
+                </Dropdown>
+                <Dropdown
+                  menu={{
+                    items: [
+                      { key: 'all', label: '所有格式', onClick: () => setFormatFilter(undefined) },
+                      { key: 'jsonl', label: 'JSONL', onClick: () => setFormatFilter('jsonl') },
+                      { key: 'json', label: 'JSON', onClick: () => setFormatFilter('json') },
+                      { key: 'csv', label: 'CSV', onClick: () => setFormatFilter('csv') },
+                      { key: 'tsv', label: 'TSV', onClick: () => setFormatFilter('tsv') },
+                    ],
+                  }}
+                >
+                  <Button>
+                    格式: {formatFilter ? formatFilter.toUpperCase() : '全部'}
+                  </Button>
+                </Dropdown>
+                <Button type="primary" onClick={applyFilters} icon={<SearchOutlined />}>
+                  应用筛选
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSearchKeyword('')
+                    setDateRange(null)
+                    setStatusFilter(undefined)
+                    setFormatFilter(undefined)
+                    fetchDatasets(selectedFolderId)
+                  }}
+                >
+                  清除筛选
+                </Button>
+                <Tag color="blue">
+                  显示 {filteredDatasets.length} 个数据集
+                </Tag>
+              </Space>
+            </div>
             <Table
               columns={columns}
-              dataSource={datasets}
+              dataSource={filteredDatasets}
               rowKey="id"
               loading={loading}
               pagination={{ pageSize: 20 }}
@@ -423,6 +568,17 @@ export default function DatasetsPage() {
         datasetId={selectedDatasetId || 0}
         currentItemSeq={1}
         totalItems={datasets.find((d) => d.id === selectedDatasetId)?.item_count || 0}
+      />
+
+      {/* 目录上传模态框 */}
+      <DirectoryUploadModal
+        visible={directoryUploadModalOpen}
+        onCancel={() => setDirectoryUploadModalOpen(false)}
+        onUploadSuccess={() => {
+          fetchDatasets(selectedFolderId)
+          setFolderRefreshTrigger((prev) => prev + 1)
+        }}
+        currentFolderId={selectedFolderId}
       />
 
       <Modal
@@ -463,10 +619,61 @@ export default function DatasetsPage() {
           <div>
             <div style={{ marginBottom: 16 }}>
               <Tag color="blue">{selectedFile?.name}</Tag>
+              {formatInfo && (
+                <>
+                  <Tag color="purple" style={{ marginLeft: 8 }}>
+                    格式: {formatInfo.format_type}
+                  </Tag>
+                  {formatInfo.confidence > 0 && (
+                    <Tag style={{ marginLeft: 4 }}>置信度: {(formatInfo.confidence * 100).toFixed(0)}%</Tag>
+                  )}
+                </>
+              )}
               <Button type="link" onClick={() => setCurrentStep(0)}>
                 重新选择
               </Button>
             </div>
+
+            {/* 显示检测到的警告和建议 */}
+            {detectionWarnings && detectionWarnings.length > 0 && (
+              <Alert
+                type="warning"
+                message="检测到以下问题或建议"
+                description={
+                  <ul style={{ marginBottom: 0 }}>
+                    {detectionWarnings.map((warning, idx) => (
+                      <li key={idx} style={{ marginBottom: 4 }}>
+                        {warning}
+                      </li>
+                    ))}
+                  </ul>
+                }
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            {/* 显示字段覆盖率信息 */}
+            {fieldCoverage && Object.entries(fieldCoverage).length > 0 && (
+              <Card
+                size="small"
+                title="字段覆盖率"
+                style={{ marginBottom: 16 }}
+              >
+                <Space wrap>
+                  {Object.entries(fieldCoverage).map(([field, coverage]: [string, any]) => {
+                    const percent = (coverage * 100).toFixed(0)
+                    const color = coverage >= 0.99 ? '#52c41a' : coverage >= 0.5 ? '#faad14' : '#f5222d'
+                    return (
+                      <span key={field} style={{ fontSize: 12 }}>
+                        <span style={{ color }}>{field}: {percent}%</span>
+                      </span>
+                    )
+                  })}
+                </Space>
+              </Card>
+            )}
+
             <FieldMappingConfig
               detectedFields={detectedFields}
               sampleData={sampleData}

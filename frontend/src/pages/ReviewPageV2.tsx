@@ -28,6 +28,7 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
 import DelegateModal from '../components/DelegateModal'
+import DocumentViewer from '../components/DocumentViewer'
 import ExportModal from '../components/ExportModal'
 import MarkedItemsModal from '../components/MarkedItemsModal'
 import QACardUnified from '../components/QACardUnified'
@@ -122,6 +123,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const [markedItemIds, setMarkedItemIds] = useState<number[]>([])
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [docPanelExpanded, setDocPanelExpanded] = useState(false)
 
   // 是否可编辑
   const canEdit = !shareToken || sharePermission === 'edit'
@@ -759,9 +761,11 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
       <div
         style={{
           minHeight: '100vh',
-          padding: 24,
+          padding: '16px',
           background: isDark ? '#141414' : '#f0f2f5',
           color: isDark ? '#e8e8e8' : undefined,
+          paddingRight: docPanelExpanded ? `calc(50vw + 16px)` : '16px', // 半屏宽度 + padding
+          transition: 'padding-right 0.3s ease',
         }}
       >
         {/* 头部 */}
@@ -941,19 +945,40 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         <Card
           className="review-card active"
           title={
-            <Space>
-              <span style={{ fontSize: 18, fontWeight: 600 }}>#{currentItem?.seq_num || '-'}</span>
-              <Tag>{currentItem?.item_type === 'qa' ? 'QA对话' : '纯文本'}</Tag>
-              <Tag color={statusColors[currentItem?.status || 'pending']}>
-                {statusLabels[currentItem?.status || 'pending']}
-              </Tag>
-              {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
-              {currentItem?.is_marked && (
-                <Tag color="purple" icon={<FlagOutlined />}>
-                  待定
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%' }}>
+              <Space>
+                <span style={{ fontSize: 18, fontWeight: 600 }}>#{currentItem?.seq_num || '-'}</span>
+                <Tag>{currentItem?.item_type === 'qa' ? 'QA对话' : '纯文本'}</Tag>
+                <Tag color={statusColors[currentItem?.status || 'pending']}>
+                  {statusLabels[currentItem?.status || 'pending']}
                 </Tag>
+                {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
+                {currentItem?.is_marked && (
+                  <Tag color="purple" icon={<FlagOutlined />}>
+                    待定
+                  </Tag>
+                )}
+              </Space>
+              {/* 描述字段区域 */}
+              {dataset?.description && (
+                <div style={{ 
+                  flex: 1, 
+                  marginLeft: 16,
+                  marginRight: 16,
+                  overflow: 'hidden',
+                  color: isDark ? '#999' : '#666',
+                  fontSize: 14,
+                }}>
+                  <Text 
+                    type="secondary" 
+                    ellipsis={{ tooltip: dataset.description }}
+                    style={{ maxWidth: '100%' }}
+                  >
+                    {dataset.description}
+                  </Text>
+                </div>
               )}
-            </Space>
+            </div>
           }
           extra={
             <Space>
@@ -978,6 +1003,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               onSave={handleSave}
               onCancel={handleCancel}
               readOnly={!canEdit}
+              hideImages={docPanelExpanded}
             />
           )}
         </Card>
@@ -1153,6 +1179,15 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         totalItems={totalItems}
         itemIds={markedItemIds}
       />
+
+      {/* 参考文档查看面板 */}
+      {datasetId && (
+        <DocumentViewer
+          datasetId={parseInt(datasetId)}
+          theme={appTheme}
+          onExpandChange={setDocPanelExpanded}
+        />
+      )}
       </div>
     </ConfigProvider>
   )
