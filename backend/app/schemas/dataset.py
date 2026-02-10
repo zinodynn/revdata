@@ -127,3 +127,6 @@ class FieldDetectionResponse(BaseModel):
     sample_data: List[dict]  # 样本数据(前3条)
     suggested_mapping: FieldMapping  # 建议的映射配置
     item_count_estimate: int  # 估算条目数
+    warnings: Optional[List[str]] = None  # 检测到的警告和建议
+    format_info: Optional[dict] = None  # 格式分析信息
+    field_coverage: Optional[dict] = None  # 字段覆盖率

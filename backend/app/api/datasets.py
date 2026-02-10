@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 import zipfile
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import func, select, update
@@ -32,7 +32,7 @@ from app.schemas.dataset import (
 )
 from app.schemas.folder import DatasetMoveRequest
 from app.services.dedup import create_deduplicator, extract_query_text, get_dedup_index_path
-from app.utils import normalize_json_keys
+from app.utils import normalize_json_keys, FieldDetectionUtils
 
 router = APIRouter()
 
@@ -42,63 +42,46 @@ def detect_fields_from_content(items: List[dict]) -> tuple[List[str], FieldMappi
     if not items:
         return [], FieldMapping()
 
-    # 收集所有字段
-    all_fields = set()
-    for item in items[:10]:  # 只检查前10条
-        if isinstance(item, dict):
-            all_fields.update(item.keys())
-
+    # 使用改进的字段检测工具扫描所有字段（不仅是前10条）
+    all_fields = FieldDetectionUtils.scan_all_fields(items)
     detected_fields = sorted(list(all_fields))
 
     # 生成建议映射
     suggested = FieldMapping(detected_fields=detected_fields)
 
     # 检测问题字段
-    q_keys = ["instruction", "question", "prompt", "input", "query", "user", "human"]
-    for key in q_keys:
+    for key in FieldDetectionUtils.QUESTION_FIELD_KEYS:
         if key in all_fields:
             suggested.question_field = key
             break
 
     # 检测回答字段
-    a_keys = ["output", "answer", "completion", "response", "assistant", "bot", "reply"]
-    for key in a_keys:
+    for key in FieldDetectionUtils.ANSWER_FIELD_KEYS:
         if key in all_fields:
             suggested.answer_field = key
             break
 
     # 检测思考字段
-    think_keys = [
-        "thinking",
-        "reasoning",
-        "thought",
-        "chain_of_thought",
-        "cot",
-        "rationale",
-    ]
-    for key in think_keys:
+    for key in FieldDetectionUtils.THINKING_FIELD_KEYS:
         if key in all_fields:
             suggested.thinking_field = key
             break
 
     # 检测上下文字段
-    ctx_keys = ["system", "system_prompt", "context", "instruction_prefix"]
-    for key in ctx_keys:
+    for key in FieldDetectionUtils.CONTEXT_FIELD_KEYS:
         if key in all_fields:
             suggested.context_field = key
             break
 
     # 检测消息字段
-    msg_keys = ["messages", "conversations", "dialogue", "chat", "turns"]
-    for key in msg_keys:
+    for key in FieldDetectionUtils.MESSAGES_FIELD_KEYS:
         if key in all_fields:
             suggested.messages_field = key
             suggested.display_mode = DisplayMode.CONVERSATION
             break
 
     # 检测图片字段
-    img_keys = ["image", "images", "img", "imgs", "picture", "pictures"]
-    for key in img_keys:
+    for key in FieldDetectionUtils.IMAGE_FIELD_KEYS:
         if key in all_fields:
             suggested.image_field = key
             break
@@ -463,29 +446,39 @@ async def list_datasets(
 
 @router.get("/dedup-defaults")
 async def get_dedup_defaults_api(current_user: User = Depends(get_current_user)):
-    """获取全局去重默认配置"""
-    defaults = get_dedup_defaults()
-    if defaults is None:
-        # 返回默认值
-        defaults = {
-            "enabled": False,
-            "use_embedding": False,
-            "embedding_api_url": "",
-            "embedding_api_key": "",
-            "embedding_model": "text-embedding-ada-002",
-            "embedding_batch_size": 32,
-            "embedding_concurrency": 1,
-            "similarity_threshold": 0.8,
-            "query_field": "question",
-        }
-    return defaults
+    """
+    获取有效的去重默认配置
+    
+    返回优先级：
+    1. global_config.json 中保存的用户设置（如果存在）
+    2. .env 中的系统级默认值
+    3. 代码中的内置默认值
+    
+    这个接口用于前端显示"应用默认配置"按钮的内容
+    """
+    # 首先尝试获取用户保存的全局配置（global_config.json）
+    user_saved_defaults = get_dedup_defaults()
+    
+    if user_saved_defaults:
+        # 用户已保存过全局配置，返回已保存的配置
+        # （这些配置可能是从系统级配置导出的）
+        return user_saved_defaults
+    
+    # 如果用户没有保存过，返回系统级配置（从 .env 读取）
+    system_defaults = DedupConfigManager.get_system_dedup_defaults()
+    return system_defaults
 
 
 @router.put("/dedup-defaults")
 async def set_dedup_defaults_api(
     config: dict, current_user: User = Depends(require_admin)
 ):
-    """设置全局去重默认配置（仅管理员）"""
+    """
+    设置全局去重默认配置（仅管理员）
+    
+    这会保存用户自定义的全局默认配置到 global_config.json
+    如果删除 global_config.json，系统会回退到 .env 中的系统级配置
+    """
     set_dedup_defaults(config)
     return {"message": "去重默认配置已更新"}
 
@@ -729,63 +722,90 @@ async def preview_dataset(
 async def detect_fields_from_file(
     file: UploadFile = File(...), current_user: User = Depends(get_current_user)
 ):
-    """预览文件并检测字段（上传前预览）"""
+    """预览文件并检测字段（上传前预览）
+    
+    功能：
+    1. 扫描所有字段（不仅仅是前10条记录）
+    2. 对于ZIP文件，分析所有JSONL/JSON文件
+    3. 检测格式冲突和字段一致性问题
+    4. 返回详细的字段和格式信息
+    """
     # 检测文件格式
     filename = file.filename.lower()
     content = await file.read()
     items = []
+    all_items_by_file = {}
+    format_analysis = None
+    consistency_check = None
+    warnings = []
 
     try:
         if filename.endswith(".jsonl"):
             lines = content.decode("utf-8").strip().split("\n")
-            for line in lines[:100]:  # 只读取前100行
+            for line in lines:  # 扫描所有行
                 if line.strip():
                     items.append(json.loads(line))
+            all_items_by_file[filename] = items
 
         elif filename.endswith(".json"):
             data = json.loads(content.decode("utf-8"))
             if isinstance(data, list):
-                items = data[:100]
+                items = data
             else:
                 items = [data]
+            all_items_by_file[filename] = items
 
         elif filename.endswith(".zip"):
+            # 找到所有支持的数据文件
             with zipfile.ZipFile(io.BytesIO(content), "r") as z:
-                # 寻找第一个支持的数据文件
-                target_file = None
+                data_files = []
                 for name in z.namelist():
                     lower_name = name.lower()
                     if lower_name.endswith(".jsonl") or lower_name.endswith(".json"):
-                        target_file = name
-                        break
+                        data_files.append(name)
 
-                if target_file and target_file.lower().endswith(".jsonl"):
-                    with z.open(target_file) as f:
-                        lines = f.read().decode("utf-8").strip().split("\n")
-                        for line in lines[:100]:
-                            if line.strip():
-                                items.append(json.loads(line))
-                elif target_file and target_file.lower().endswith(".json"):
-                    with z.open(target_file) as f:
-                        data = json.loads(f.read().decode("utf-8"))
-                        if isinstance(data, list):
-                            items = data[:100]
-                        else:
-                            items = [data]
-                else:
+                if not data_files:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="ZIP包中未找到支持的数据文件(.jsonl/.json)",
                     )
 
+                # 分析所有数据文件
+                for data_file in data_files:
+                    file_items = []
+                    if data_file.lower().endswith(".jsonl"):
+                        with z.open(data_file) as f:
+                            lines = f.read().decode("utf-8").strip().split("\n")
+                            for line in lines:  # 扫描所有行
+                                if line.strip():
+                                    file_items.append(json.loads(line))
+                    elif data_file.lower().endswith(".json"):
+                        with z.open(data_file) as f:
+                            data = json.loads(f.read().decode("utf-8"))
+                            if isinstance(data, list):
+                                file_items = data
+                            else:
+                                file_items = [data]
+                    
+                    all_items_by_file[data_file] = file_items
+                    items.extend(file_items)
+
+                # 如果有多个文件，检测格式冲突
+                if len(data_files) > 1:
+                    warnings.append(f"检测到 {len(data_files)} 个数据文件")
+                    format_analysis = FieldDetectionUtils.analyze_multifile_format(
+                        all_items_by_file
+                    )
+                    if not format_analysis["is_consistent"]:
+                        warnings.extend(format_analysis["conflicts"])
+
         elif filename.endswith(".csv") or filename.endswith(".tsv"):
             delimiter = "," if filename.endswith(".csv") else "\t"
             text_content = content.decode("utf-8")
             reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
-            for i, row in enumerate(reader):
-                if i >= 100:
-                    break
+            for row in reader:
                 items.append(dict(row))
+            all_items_by_file[filename] = items
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的文件格式"
@@ -801,21 +821,49 @@ async def detect_fields_from_file(
         )
     except Exception as e:
         print(f"Detect fields error: {e}")
-        # 如果不是我们预期的错误，继续抛出或者返回通用错误
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"文件解析失败: {str(e)}"
         )
 
+    # 分析格式和一致性
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="文件中没有找到有效的数据",
+        )
+
+    # 检测数据格式
+    format_info = FieldDetectionUtils.detect_format_type(items)
+    
+    # 检测字段一致性
+    consistency_check = FieldDetectionUtils.check_field_consistency(items)
+    if consistency_check["conflicts"]:
+        warnings.extend(consistency_check["conflicts"])
+    if consistency_check["recommendations"]:
+        warnings.extend(
+            [f"💡 {r}" for r in consistency_check["recommendations"]]
+        )
+
+    # 检测字段
     detected_fields, suggested_mapping = detect_fields_from_content(items)
 
-    return FieldDetectionResponse(
+    response = FieldDetectionResponse(
         detected_fields=detected_fields,
         sample_data=items[:3],
         suggested_mapping=suggested_mapping,
         item_count_estimate=len(items),
+        warnings=warnings if warnings else None,
+        format_info=format_info,
+        field_coverage=(
+            consistency_check["field_coverage"]
+            if consistency_check
+            else None
+        ),
     )
+
+    return response
 
 
 @router.post("/{dataset_id}/append", response_model=AppendResult)

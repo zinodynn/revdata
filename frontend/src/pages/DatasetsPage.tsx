@@ -11,6 +11,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons'
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -86,6 +87,9 @@ export default function DatasetsPage() {
   const [fieldMapping, setFieldMapping] = useState<FieldMapping | null>(null)
   const [reviewConfig, setReviewConfig] = useState<ReviewConfig | null>(null)
   const [detecting, setDetecting] = useState(false)
+  const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
+  const [formatInfo, setFormatInfo] = useState<any>(null)
+  const [fieldCoverage, setFieldCoverage] = useState<any>(null)
   const [authCodeModalOpen, setAuthCodeModalOpen] = useState(false)
   const [delegateModalOpen, setDelegateModalOpen] = useState(false)
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null)
@@ -162,6 +166,9 @@ export default function DatasetsPage() {
       setSampleData(res.data.sample_data)
       setSuggestedMapping(res.data.suggested_mapping)
       setFieldMapping(res.data.suggested_mapping)
+      setDetectionWarnings(res.data.warnings || [])
+      setFormatInfo(res.data.format_info)
+      setFieldCoverage(res.data.field_coverage)
       setCurrentStep(1)
     } catch (error: any) {
       message.error(error.response?.data?.detail || '文件解析失败')
@@ -180,6 +187,9 @@ export default function DatasetsPage() {
     setSuggestedMapping(null)
     setFieldMapping(null)
     setReviewConfig(null)
+    setDetectionWarnings([])
+    setFormatInfo(null)
+    setFieldCoverage(null)
     form.resetFields()
   }
 
@@ -496,10 +506,61 @@ export default function DatasetsPage() {
           <div>
             <div style={{ marginBottom: 16 }}>
               <Tag color="blue">{selectedFile?.name}</Tag>
+              {formatInfo && (
+                <>
+                  <Tag color="purple" style={{ marginLeft: 8 }}>
+                    格式: {formatInfo.format_type}
+                  </Tag>
+                  {formatInfo.confidence > 0 && (
+                    <Tag style={{ marginLeft: 4 }}>置信度: {(formatInfo.confidence * 100).toFixed(0)}%</Tag>
+                  )}
+                </>
+              )}
               <Button type="link" onClick={() => setCurrentStep(0)}>
                 重新选择
               </Button>
             </div>
+
+            {/* 显示检测到的警告和建议 */}
+            {detectionWarnings && detectionWarnings.length > 0 && (
+              <Alert
+                type="warning"
+                message="检测到以下问题或建议"
+                description={
+                  <ul style={{ marginBottom: 0 }}>
+                    {detectionWarnings.map((warning, idx) => (
+                      <li key={idx} style={{ marginBottom: 4 }}>
+                        {warning}
+                      </li>
+                    ))}
+                  </ul>
+                }
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            {/* 显示字段覆盖率信息 */}
+            {fieldCoverage && Object.entries(fieldCoverage).length > 0 && (
+              <Card
+                size="small"
+                title="字段覆盖率"
+                style={{ marginBottom: 16 }}
+              >
+                <Space wrap>
+                  {Object.entries(fieldCoverage).map(([field, coverage]: [string, any]) => {
+                    const percent = (coverage * 100).toFixed(0)
+                    const color = coverage >= 0.99 ? '#52c41a' : coverage >= 0.5 ? '#faad14' : '#f5222d'
+                    return (
+                      <span key={field} style={{ fontSize: 12 }}>
+                        <span style={{ color }}>{field}: {percent}%</span>
+                      </span>
+                    )
+                  })}
+                </Space>
+              </Card>
+            )}
+
             <FieldMappingConfig
               detectedFields={detectedFields}
               sampleData={sampleData}
