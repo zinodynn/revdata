@@ -27,9 +27,16 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // 只在以下情况自动跳转登录：
+    // 1. 返回 401 错误
+    // 2. 请求不是登录接口（登录失败应该由登录页处理）
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout()
-      window.location.href = `${baseUrl}/login`
+      const isLoginRequest = error.config?.url?.includes('/auth/login')
+      if (!isLoginRequest) {
+        // Token 过期，自动登出并跳转到登录页
+        useAuthStore.getState().logout()
+        window.location.href = `${baseUrl}/login`
+      }
     }
     return Promise.reject(error)
   }
@@ -68,8 +75,25 @@ export const authApi = {
 
 // Datasets API
 export const datasetsApi = {
-  list: (page = 1, pageSize = 20, folderId?: number | null) =>
-    api.get('/datasets', { params: { page, page_size: pageSize, folder_id: folderId } }),
+  list: (
+    page = 1, 
+    pageSize = 20, 
+    folderId?: number | null,
+    keyword?: string,
+    status?: string,
+    format?: string,
+    startDate?: string,
+    endDate?: string
+  ) => {
+    const params: any = { page, page_size: pageSize }
+    if (folderId !== undefined && folderId !== null) params.folder_id = folderId
+    if (keyword) params.keyword = keyword
+    if (status) params.status = status
+    if (format) params.format = format
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    return api.get('/datasets', { params })
+  },
   get: (id: number) => api.get(`/datasets/${id}`),
   update: (
     id: number,
