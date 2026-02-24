@@ -110,7 +110,6 @@ export default function DatasetsPage() {
   const [moveDatasetName, setMoveDatasetName] = useState<string>('')
   const [renameFolderModalOpen, setRenameFolderModalOpen] = useState(false)
   const [renameFolderId, setRenameFolderId] = useState<number | null>(null)
-  const [renameFolderName, setRenameFolderName] = useState('')
   const [renameForm] = Form.useForm()
   const [directoryUploadModalOpen, setDirectoryUploadModalOpen] = useState(false)
 
@@ -252,7 +251,6 @@ export default function DatasetsPage() {
 
   const handleRenameFolder = (folder: { id: number; name: string }) => {
     setRenameFolderId(folder.id)
-    setRenameFolderName(folder.name)
     renameForm.setFieldsValue({ name: folder.name })
     setRenameFolderModalOpen(true)
   }
