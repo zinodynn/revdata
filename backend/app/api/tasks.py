@@ -2,13 +2,14 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.data_item import DataItem, ItemStatus
+from app.models.dataset import Dataset, DatasetStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskDelegate, TaskListResponse, TaskResponse
@@ -346,6 +347,22 @@ async def complete_task(
 
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.utcnow()
+
+    # 检查数据集是否所有条目均已完成审核，若是则更新数据集状态为 COMPLETED
+    pending_items_result = await db.execute(
+        select(func.count(DataItem.id)).where(
+            and_(
+                DataItem.dataset_id == task.dataset_id,
+                DataItem.status == ItemStatus.PENDING,
+            )
+        )
+    )
+    if pending_items_result.scalar() == 0:
+        await db.execute(
+            update(Dataset)
+            .where(Dataset.id == task.dataset_id)
+            .values(status=DatasetStatus.COMPLETED)
+        )
 
     await db.commit()
     await db.refresh(task)

@@ -91,9 +91,6 @@ export default function DocxPreview({ docId, name, getUrl }: Props) {
         flexDirection: 'column',
       }}
     >
-      {name && (
-        <div style={{ padding: 12, borderBottom: '1px solid #eee', fontWeight: 500 }}>{name}</div>
-      )}
       {html ? (
         <div
           style={{ flex: 1, overflow: 'auto', padding: 12, boxSizing: 'border-box' }}

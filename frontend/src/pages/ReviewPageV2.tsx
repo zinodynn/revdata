@@ -124,6 +124,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
   const [docPanelExpanded, setDocPanelExpanded] = useState(false)
+  const [docPanelWidth, setDocPanelWidth] = useState(0)
 
   // 是否可编辑
   const canEdit = !shareToken || sharePermission === 'edit'
@@ -152,7 +153,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           1,
           undefined,
           undefined,
-          taskId ? parseInt(taskId) : undefined,
+          taskId ? parseInt(taskId) : undefined
         )
         const {
           items,
@@ -201,7 +202,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         setLoading(false)
       }
     },
-    [datasetId, searchParams, setProgress],
+    [datasetId, searchParams, setProgress]
   )
 
   // 自动跳转逻辑：如果没有指定 seq，则尝试跳转到第一条待审核记录
@@ -210,7 +211,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
 
     const seqParam = searchParams.get('seq')
     const taskIdParam = searchParams.get('taskId')
-    
+
     // 如果有 taskId 且 task 数据尚未加载，等待 task 加载完成
     if (taskIdParam && !task) return
 
@@ -242,11 +243,14 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               // 离散任务：暂不支持自动计算索引，降级到读取进度或第一条
               const saved = getProgress(datasetId, taskIdParam)
               // URL 驱动跳转
-              setSearchParams(prev => {
-                const p = new URLSearchParams(prev)
-                p.set('seq', (saved > 1 ? saved : 1).toString())
-                return p
-              }, { replace: true })
+              setSearchParams(
+                (prev) => {
+                  const p = new URLSearchParams(prev)
+                  p.set('seq', (saved > 1 ? saved : 1).toString())
+                  return p
+                },
+                { replace: true }
+              )
               return
             } else {
               // 连续任务：计算相对索引
@@ -255,39 +259,48 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           }
 
           // 跳转到目标进度
-          setSearchParams(prev => {
-            const p = new URLSearchParams(prev)
-            p.set('seq', (targetIndex > 0 ? targetIndex : 1).toString())
-            return p
-          }, { replace: true })
+          setSearchParams(
+            (prev) => {
+              const p = new URLSearchParams(prev)
+              p.set('seq', (targetIndex > 0 ? targetIndex : 1).toString())
+              return p
+            },
+            { replace: true }
+          )
         } else {
           // 没有待审核记录（可能都完成了），降级到读取进度或第一条
-           const saved = getProgress(datasetId, taskIdParam || null)
-           setSearchParams(prev => {
-             const p = new URLSearchParams(prev)
-             p.set('seq', (saved > 1 ? saved : 1).toString())
-             return p
-           }, { replace: true })
+          const saved = getProgress(datasetId, taskIdParam || null)
+          setSearchParams(
+            (prev) => {
+              const p = new URLSearchParams(prev)
+              p.set('seq', (saved > 1 ? saved : 1).toString())
+              return p
+            },
+            { replace: true }
+          )
         }
       } catch (error) {
         console.error('Auto-jump failed', error)
-        setSearchParams(prev => {
-          const p = new URLSearchParams(prev)
-          p.set('seq', '1')
-          return p
-        }, { replace: true })
+        setSearchParams(
+          (prev) => {
+            const p = new URLSearchParams(prev)
+            p.set('seq', '1')
+            return p
+          },
+          { replace: true }
+        )
       }
     }
 
     autoJump()
-    
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetId, task, searchParams]) // 当 task 加载完成后会重新触发校验
 
   // 导航
   const goPrev = () => {
     if (currentIndex > 1 && !editingField) {
-      setSearchParams(prev => {
+      setSearchParams((prev) => {
         const p = new URLSearchParams(prev)
         p.set('seq', (currentIndex - 1).toString())
         return p
@@ -297,7 +310,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
 
   const goNext = () => {
     if (currentIndex < totalItems && !editingField) {
-      setSearchParams(prev => {
+      setSearchParams((prev) => {
         const p = new URLSearchParams(prev)
         p.set('seq', (currentIndex + 1).toString())
         return p
@@ -314,7 +327,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
     // 无论是全局模式还是任务模式，seq 在此处都代表列表中的索引(page)
     // 因为 InputNumber 的 max 限制为 totalItems (当前列表总数)
     if (seq >= 1 && seq <= totalItems) {
-      setSearchParams(prev => {
+      setSearchParams((prev) => {
         const p = new URLSearchParams(prev)
         p.set('seq', seq.toString())
         return p
@@ -337,7 +350,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         1,
         'pending',
         undefined,
-        taskId ? parseInt(taskId) : undefined,
+        taskId ? parseInt(taskId) : undefined
       )
       if (res.data.items.length > 0) {
         const item = res.data.items[0]
@@ -350,7 +363,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           } else {
             // 范围任务
             const relativeIndex = item.seq_num - task.item_start + 1
-            setSearchParams(prev => {
+            setSearchParams((prev) => {
               const p = new URLSearchParams(prev)
               p.set('seq', relativeIndex.toString())
               return p
@@ -358,7 +371,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           }
         } else {
           // 全局模式，seq_num 即为索引
-          setSearchParams(prev => {
+          setSearchParams((prev) => {
             const p = new URLSearchParams(prev)
             p.set('seq', item.seq_num.toString())
             return p
@@ -383,7 +396,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         1,
         status,
         undefined,
-        taskId ? parseInt(taskId) : undefined,
+        taskId ? parseInt(taskId) : undefined
       )
       if (res.data.items.length > 0) {
         const item = res.data.items[0]
@@ -392,14 +405,14 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             message.info('离散任务模式下暂不支持按状态跳转')
           } else {
             const relativeIndex = item.seq_num - task.item_start + 1
-            setSearchParams(prev => {
+            setSearchParams((prev) => {
               const p = new URLSearchParams(prev)
               p.set('seq', relativeIndex.toString())
               return p
             })
           }
         } else {
-          setSearchParams(prev => {
+          setSearchParams((prev) => {
             const p = new URLSearchParams(prev)
             p.set('seq', item.seq_num.toString())
             return p
@@ -430,7 +443,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
         1,
         undefined,
         true,
-        taskId ? parseInt(taskId) : undefined,
+        taskId ? parseInt(taskId) : undefined
       )
       if (res.data.items.length > 0) {
         const item = res.data.items[0]
@@ -439,14 +452,14 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
             message.info('离散任务模式下暂不支持按标记跳转')
           } else {
             const relativeIndex = item.seq_num - task.item_start + 1
-            setSearchParams(prev => {
+            setSearchParams((prev) => {
               const p = new URLSearchParams(prev)
               p.set('seq', relativeIndex.toString())
               return p
             })
           }
         } else {
-          setSearchParams(prev => {
+          setSearchParams((prev) => {
             const p = new URLSearchParams(prev)
             p.set('seq', item.seq_num.toString())
             return p
@@ -739,7 +752,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                   size="large"
                   onClick={() => {
                     setIsCompleted(false)
-                    setSearchParams(prev => {
+                    setSearchParams((prev) => {
                       const p = new URLSearchParams(prev)
                       p.set('seq', '1')
                       return p
@@ -764,430 +777,454 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           padding: '16px',
           background: isDark ? '#141414' : '#f0f2f5',
           color: isDark ? '#e8e8e8' : undefined,
-          paddingRight: docPanelExpanded ? `calc(50vw + 16px)` : '16px', // 半屏宽度 + padding
+          paddingRight: docPanelExpanded
+            ? docPanelWidth
+              ? docPanelWidth + 16
+              : 'calc(40vw + 16px)'
+            : '16px', // 半屏宽度 + padding
           transition: 'padding-right 0.3s ease',
         }}
       >
         {/* 头部 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Space>
-          <Button
-            icon={<ArrowLeftOutlined />}
-            onClick={() => {
-              const taskId = searchParams.get('taskId')
-              navigate(taskId ? '/tasks' : '/datasets')
-            }}
-          >
-            返回
-          </Button>
-          <Title level={4} style={{ margin: 0 }}>
-            {dataset?.name || '加载中...'}
-          </Title>
-          {shareToken && (
-            <Tag color="blue">
-              {sharePermission === 'view' ? '只读' : sharePermission === 'edit' ? '可编辑' : '评论'}
-            </Tag>
-          )}
-        </Space>
-        <Space>
-          {!shareToken && (
-            <Dropdown menu={{ items: actionMenuItems }}>
-              <Button>更多操作</Button>
-            </Dropdown>
-          )}
-        </Space>
-      </div>
-
-      {/* 统计栏 (Compact & Expandable) */}
-      <div
-        style={{
-          marginBottom: 16,
-          position: 'relative',
-          zIndex: 100,
-          height: 46,
-        }}
-        onMouseEnter={() => setHeaderExpanded(true)}
-        onMouseLeave={() => setHeaderExpanded(false)}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            background: isDark ? '#1f1f1f' : '#fff',
-            borderRadius: 8,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-            padding: headerExpanded ? '12px 24px' : '8px 24px',
-            transition: 'all 0.3s ease',
-            overflow: 'hidden',
-            height: headerExpanded ? 100 : 46,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          {/* Left: Summary */}
-          <Space size="large" style={{ minWidth: 200 }}>
-            <Text strong style={{ fontSize: 16 }}>
-              进度: {currentIndex} / {totalItems}
-            </Text>
-            {!headerExpanded && (
-              <Space>
-                <Tag color="default">待审 {stats.pending}</Tag>
-                <Tag color="purple">待定 {stats.marked}</Tag>
-              </Space>
+          <Space>
+            <Button
+              icon={<ArrowLeftOutlined />}
+              onClick={() => {
+                const taskId = searchParams.get('taskId')
+                navigate(taskId ? '/tasks' : '/datasets')
+              }}
+            >
+              返回
+            </Button>
+            <Title level={4} style={{ margin: 0 }}>
+              {dataset?.name || '加载中...'}
+            </Title>
+            {shareToken && (
+              <Tag color="blue">
+                {sharePermission === 'view'
+                  ? '只读'
+                  : sharePermission === 'edit'
+                    ? '可编辑'
+                    : '评论'}
+              </Tag>
             )}
           </Space>
+          <Space>
+            {!shareToken && (
+              <Dropdown menu={{ items: actionMenuItems }}>
+                <Button>更多操作</Button>
+              </Dropdown>
+            )}
+          </Space>
+        </div>
 
-          {/* Middle: Expanded Stats */}
+        {/* 统计栏 (Compact & Expandable) */}
+        <div
+          style={{
+            marginBottom: 16,
+            position: 'relative',
+            zIndex: 100,
+            height: 46,
+          }}
+          onMouseEnter={() => setHeaderExpanded(true)}
+          onMouseLeave={() => setHeaderExpanded(false)}
+        >
           <div
             style={{
-              opacity: headerExpanded ? 1 : 0,
-              transition: 'opacity 0.2s',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              background: isDark ? '#1f1f1f' : '#fff',
+              borderRadius: 8,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              padding: headerExpanded ? '12px 24px' : '8px 24px',
+              transition: 'all 0.3s ease',
+              overflow: 'hidden',
+              height: headerExpanded ? 100 : 46,
               display: 'flex',
-              gap: 32,
-              visibility: headerExpanded ? 'visible' : 'hidden',
+              alignItems: 'center',
+              justifyContent: 'space-between',
             }}
           >
-            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('pending')}>
-              <Statistic
-                title="待审核"
-                value={stats.pending}
-                valueStyle={{ fontSize: 20, color: '#999' }}
-              />
+            {/* Left: Summary */}
+            <Space size="large" style={{ minWidth: 200 }}>
+              <Text strong style={{ fontSize: 16 }}>
+                进度: {currentIndex} / {totalItems}
+              </Text>
+              {!headerExpanded && (
+                <Space>
+                  <Tag color="default">待审 {stats.pending}</Tag>
+                  <Tag color="purple">待定 {stats.marked}</Tag>
+                </Space>
+              )}
+            </Space>
+
+            {/* Middle: Expanded Stats */}
+            <div
+              style={{
+                opacity: headerExpanded ? 1 : 0,
+                transition: 'opacity 0.2s',
+                display: 'flex',
+                gap: 32,
+                visibility: headerExpanded ? 'visible' : 'hidden',
+              }}
+            >
+              <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('pending')}>
+                <Statistic
+                  title="待审核"
+                  value={stats.pending}
+                  valueStyle={{ fontSize: 20, color: '#999' }}
+                />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('approved')}>
+                <Statistic
+                  title="已通过"
+                  value={stats.approved}
+                  valueStyle={{ fontSize: 20, color: '#52c41a' }}
+                />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('rejected')}>
+                <Statistic
+                  title="已拒绝"
+                  value={stats.rejected}
+                  valueStyle={{ fontSize: 20, color: '#ff4d4f' }}
+                />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('modified')}>
+                <Statistic
+                  title="已修改"
+                  value={stats.modified}
+                  valueStyle={{ fontSize: 20, color: '#faad14' }}
+                />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => goToMarked()}>
+                <Statistic
+                  title="待定(Marked)"
+                  value={stats.marked}
+                  valueStyle={{ fontSize: 20, color: '#722ed1' }}
+                />
+              </div>
             </div>
-            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('approved')}>
-              <Statistic
-                title="已通过"
-                value={stats.approved}
-                valueStyle={{ fontSize: 20, color: '#52c41a' }}
+
+            {/* Right: Jump Controls */}
+            <Space>
+              <Text>跳转:</Text>
+              <InputNumber
+                id="jump-input"
+                size="small"
+                min={1}
+                max={totalItems}
+                value={jumpToSeq}
+                onChange={(v) => setJumpToSeq(v)}
+                onPressEnter={() => jumpToSeq && goToSeq(jumpToSeq)}
+                style={{ width: 80 }}
+                disabled={!!editingField}
               />
+              <Button
+                size="small"
+                icon={<FastForwardOutlined />}
+                onClick={goToNextPending}
+                disabled={!!editingField}
+              >
+                下一待审
+              </Button>
+            </Space>
+          </div>
+        </div>
+
+        {/* 快捷键提示 */}
+        <div
+          style={{
+            marginBottom: 8,
+            padding: '8px 12px',
+            background: isDark ? '#1f1f1f' : '#f5f5f5',
+            borderRadius: 4,
+            fontSize: 12,
+            color: isDark ? '#F8F8F2' : '#666',
+            border: isDark ? '1px solid #1f1f1f' : 'none',
+          }}
+        >
+          <Space split="|" wrap>
+            <span>
+              {hotkeys.prevItem}/{hotkeys.nextItem} 翻页
+            </span>
+            <span>{hotkeys.approve} 通过</span>
+            <span>{hotkeys.reject} 拒绝</span>
+            <span>{hotkeys.focusQ} 编辑问题</span>
+            <span>{hotkeys.focusA} 编辑回答</span>
+            <span>tab 下一个栏目</span>
+            <span>{hotkeys.save} 保存</span>
+            <span>{hotkeys.cancel} 取消</span>
+            <span>{hotkeys.jumpToNext} 下一待审</span>
+          </Space>
+        </div>
+
+        {/* 审核卡片 */}
+        <Spin spinning={loading}>
+          <Card
+            className="review-card active"
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%' }}>
+                <Space>
+                  <span style={{ fontSize: 18, fontWeight: 600 }}>
+                    #{currentItem?.seq_num || '-'}
+                  </span>
+                  <Tag>{currentItem?.item_type === 'qa' ? 'QA对话' : '纯文本'}</Tag>
+                  <Tag color={statusColors[currentItem?.status || 'pending']}>
+                    {statusLabels[currentItem?.status || 'pending']}
+                  </Tag>
+                  {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
+                  {currentItem?.is_marked && (
+                    <Tag color="purple" icon={<FlagOutlined />}>
+                      待定
+                    </Tag>
+                  )}
+                </Space>
+                {/* 描述字段区域 */}
+                {dataset?.description && (
+                  <div
+                    style={{
+                      flex: 1,
+                      marginLeft: 16,
+                      marginRight: 16,
+                      overflow: 'hidden',
+                      color: isDark ? '#999' : '#666',
+                      fontSize: 14,
+                    }}
+                  >
+                    <Text
+                      type="secondary"
+                      ellipsis={{ tooltip: dataset.description }}
+                      style={{ maxWidth: '100%' }}
+                    >
+                      {dataset.description}
+                    </Text>
+                  </div>
+                )}
+              </div>
+            }
+            extra={
+              <Space>
+                <Text style={{ fontSize: 16 }}>
+                  <strong>{currentIndex}</strong> / {totalItems}
+                </Text>
+              </Space>
+            }
+            styles={{ body: { padding: 24, minHeight: 300 } }}
+          >
+            {currentItem && (
+              <QACardUnified
+                originalContent={currentItem.original_content}
+                currentContent={editingContent || currentItem.current_content}
+                seqNum={currentItem.seq_num}
+                theme={appTheme}
+                fieldMapping={dataset?.field_mapping}
+                datasetSourceFile={dataset?.source_file}
+                editingField={editingField}
+                onStartEdit={startEdit}
+                onContentChange={setEditingContent}
+                onSave={handleSave}
+                onCancel={handleCancel}
+                readOnly={!canEdit}
+                hideImages={docPanelExpanded}
+              />
+            )}
+          </Card>
+        </Spin>
+
+        {/* 临时调试面板（编辑时显示） */}
+        {editingField && (
+          <div
+            style={{
+              position: 'fixed',
+              right: 12,
+              bottom: 12,
+              width: 360,
+              maxHeight: 220,
+              overflow: 'auto',
+              background: isDark ? '#1f1f1f' : '#fff',
+              border: isDark ? '1px solid #1f1f1f' : '1px solid #e8e8e8',
+              padding: 10,
+              borderRadius: 6,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              zIndex: 9999,
+            }}
+          >
+            <div style={{ fontSize: 12, marginBottom: 6 }}>
+              <strong>调试日志 (最近)</strong>
             </div>
-            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('rejected')}>
-              <Statistic
-                title="已拒绝"
-                value={stats.rejected}
-                valueStyle={{ fontSize: 20, color: '#ff4d4f' }}
-              />
-            </div>
-            <div style={{ cursor: 'pointer' }} onClick={() => goToStatus('modified')}>
-              <Statistic
-                title="已修改"
-                value={stats.modified}
-                valueStyle={{ fontSize: 20, color: '#faad14' }}
-              />
-            </div>
-            <div style={{ cursor: 'pointer' }} onClick={() => goToMarked()}>
-              <Statistic
-                title="待定(Marked)"
-                value={stats.marked}
-                valueStyle={{ fontSize: 20, color: '#722ed1' }}
-              />
+            <div style={{ fontSize: 12, color: '#444' }}>
+              {((window as any).__revdata_debug_logs || [])
+                .slice(-30)
+                .reverse()
+                .map((l: any, i: number) => (
+                  <div
+                    key={i}
+                    style={{
+                      marginBottom: 6,
+                      borderBottom: '1px dashed #f0f0f0',
+                      paddingBottom: 4,
+                    }}
+                  >
+                    <div style={{ color: '#999', fontSize: 11 }}>
+                      {new Date(l.t).toLocaleTimeString()}
+                    </div>
+                    <div>
+                      <strong>{l.tag}</strong> · {l.type}{' '}
+                      {l.field ? <span>· {l.field}</span> : null}
+                    </div>
+                    <div
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        fontSize: 12,
+                        color: isDark ? '#e8e8e8' : '#222',
+                      }}
+                    >
+                      {' '}
+                      {JSON.stringify(l, null, 2)}{' '}
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
+        )}
 
-          {/* Right: Jump Controls */}
-          <Space>
-            <Text>跳转:</Text>
-            <InputNumber
-              id="jump-input"
-              size="small"
-              min={1}
-              max={totalItems}
-              value={jumpToSeq}
-              onChange={(v) => setJumpToSeq(v)}
-              onPressEnter={() => jumpToSeq && goToSeq(jumpToSeq)}
-              style={{ width: 80 }}
-              disabled={!!editingField}
-            />
+        {/* 操作按钮 */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '16px 0',
+            background: isDark ? '#272822' : '#f5f5f5',
+            borderTop: isDark ? '1px solid #1f1f1f' : '1px solid #d9d9d9',
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 10,
+            boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
+          }}
+        >
+          <Space size="large">
             <Button
-              size="small"
-              icon={<FastForwardOutlined />}
-              onClick={goToNextPending}
-              disabled={!!editingField}
+              size="large"
+              icon={<LeftOutlined />}
+              onClick={goPrev}
+              disabled={currentIndex <= 1 || !!editingField}
             >
-              下一待审
+              上一条
+            </Button>
+
+            {editingField ? (
+              <>
+                <Button size="large" onClick={handleCancel}>
+                  取消 ({hotkeys.cancel})
+                </Button>
+                <Button size="large" type="primary" onClick={handleSave} loading={saving}>
+                  保存 ({hotkeys.save.toUpperCase()})
+                </Button>
+              </>
+            ) : (
+              canEdit && (
+                <>
+                  <Button
+                    size="large"
+                    icon={<FlagOutlined />}
+                    onClick={handleMark}
+                    loading={saving}
+                    disabled={task?.status === 'completed'}
+                  >
+                    {currentItem?.is_marked ? '取消标记' : '标记'}
+                  </Button>
+                  {stats.marked > 0 && (
+                    <Button
+                      size="large"
+                      icon={<SendOutlined />}
+                      onClick={handleDelegateMarked}
+                      loading={loading}
+                      disabled={task?.status === 'completed'}
+                    >
+                      生成委派 ({stats.marked})
+                    </Button>
+                  )}
+                  <Button
+                    size="large"
+                    type="primary"
+                    danger
+                    onClick={handleReject}
+                    loading={saving}
+                    disabled={task?.status === 'completed'}
+                  >
+                    拒绝 ({hotkeys.reject.toUpperCase()})
+                  </Button>
+                  <Button
+                    size="large"
+                    type="primary"
+                    style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                    onClick={handleApprove}
+                    loading={saving}
+                    disabled={task?.status === 'completed'}
+                  >
+                    通过 ({hotkeys.approve.toUpperCase()})
+                  </Button>
+                </>
+              )
+            )}
+
+            <Button
+              size="large"
+              icon={<RightOutlined />}
+              onClick={goNext}
+              disabled={currentIndex >= totalItems || !!editingField}
+            >
+              下一条
             </Button>
           </Space>
         </div>
-      </div>
 
-      {/* 快捷键提示 */}
-      <div
-        style={{
-          marginBottom: 8,
-          padding: '8px 12px',
-          background: isDark ? '#1f1f1f' : '#f5f5f5',
-          borderRadius: 4,
-          fontSize: 12,
-          color: isDark ? '#F8F8F2' : '#666',
-          border: isDark ? '1px solid #1f1f1f' : 'none',
-        }}
-      >
-        <Space split="|" wrap>
-          <span>
-            {hotkeys.prevItem}/{hotkeys.nextItem} 翻页
-          </span>
-          <span>{hotkeys.approve} 通过</span>
-          <span>{hotkeys.reject} 拒绝</span>
-          <span>{hotkeys.focusQ} 编辑问题</span>
-          <span>{hotkeys.focusA} 编辑回答</span>
-          <span>tab 下一个栏目</span>
-          <span>{hotkeys.save} 保存</span>
-          <span>{hotkeys.cancel} 取消</span>
-          <span>{hotkeys.jumpToNext} 下一待审</span>
-        </Space>
-      </div>
-
-      {/* 审核卡片 */}
-      <Spin spinning={loading}>
-        <Card
-          className="review-card active"
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%' }}>
-              <Space>
-                <span style={{ fontSize: 18, fontWeight: 600 }}>#{currentItem?.seq_num || '-'}</span>
-                <Tag>{currentItem?.item_type === 'qa' ? 'QA对话' : '纯文本'}</Tag>
-                <Tag color={statusColors[currentItem?.status || 'pending']}>
-                  {statusLabels[currentItem?.status || 'pending']}
-                </Tag>
-                {currentItem?.has_changes && <Tag color="blue">有修改</Tag>}
-                {currentItem?.is_marked && (
-                  <Tag color="purple" icon={<FlagOutlined />}>
-                    待定
-                  </Tag>
-                )}
-              </Space>
-              {/* 描述字段区域 */}
-              {dataset?.description && (
-                <div style={{ 
-                  flex: 1, 
-                  marginLeft: 16,
-                  marginRight: 16,
-                  overflow: 'hidden',
-                  color: isDark ? '#999' : '#666',
-                  fontSize: 14,
-                }}>
-                  <Text 
-                    type="secondary" 
-                    ellipsis={{ tooltip: dataset.description }}
-                    style={{ maxWidth: '100%' }}
-                  >
-                    {dataset.description}
-                  </Text>
-                </div>
-              )}
-            </div>
-          }
-          extra={
-            <Space>
-              <Text style={{ fontSize: 16 }}>
-                <strong>{currentIndex}</strong> / {totalItems}
-              </Text>
-            </Space>
-          }
-          styles={{ body: { padding: 24, minHeight: 300 } }}
-        >
-          {currentItem && (
-            <QACardUnified
-              originalContent={currentItem.original_content}
-              currentContent={editingContent || currentItem.current_content}
-              seqNum={currentItem.seq_num}
-              theme={appTheme}
-              fieldMapping={dataset?.field_mapping}
-              datasetSourceFile={dataset?.source_file}
-              editingField={editingField}
-              onStartEdit={startEdit}
-              onContentChange={setEditingContent}
-              onSave={handleSave}
-              onCancel={handleCancel}
-              readOnly={!canEdit}
-              hideImages={docPanelExpanded}
-            />
-          )}
-        </Card>
-      </Spin>
-
-      {/* 临时调试面板（编辑时显示） */}
-      {editingField && (
-        <div
-          style={{
-            position: 'fixed',
-            right: 12,
-            bottom: 12,
-            width: 360,
-            maxHeight: 220,
-            overflow: 'auto',
-            background: isDark ? '#1f1f1f' : '#fff',
-            border: isDark ? '1px solid #1f1f1f' : '1px solid #e8e8e8',
-            padding: 10,
-            borderRadius: 6,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-            zIndex: 9999,
-          }}
-        >
-          <div style={{ fontSize: 12, marginBottom: 6 }}>
-            <strong>调试日志 (最近)</strong>
-          </div>
-          <div style={{ fontSize: 12, color: '#444' }}>
-            {((window as any).__revdata_debug_logs || [])
-              .slice(-30)
-              .reverse()
-              .map((l: any, i: number) => (
-                <div
-                  key={i}
-                  style={{ marginBottom: 6, borderBottom: '1px dashed #f0f0f0', paddingBottom: 4 }}
-                >
-                  <div style={{ color: '#999', fontSize: 11 }}>
-                    {new Date(l.t).toLocaleTimeString()}
-                  </div>
-                  <div>
-                    <strong>{l.tag}</strong> · {l.type} {l.field ? <span>· {l.field}</span> : null}
-                  </div>
-                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: isDark ? '#e8e8e8' : '#222' }}>
-                    {' '}
-                    {JSON.stringify(l, null, 2)}{' '}
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* 操作按钮 */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '16px 0',
-          background: isDark ? '#272822' : '#f5f5f5',
-          borderTop: isDark ? '1px solid #1f1f1f' : '1px solid #d9d9d9',
-          position: 'sticky',
-          bottom: 0,
-          zIndex: 10,
-          boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
-        }}
-      >
-        <Space size="large">
-          <Button
-            size="large"
-            icon={<LeftOutlined />}
-            onClick={goPrev}
-            disabled={currentIndex <= 1 || !!editingField}
-          >
-            上一条
-          </Button>
-
-          {editingField ? (
-            <>
-              <Button size="large" onClick={handleCancel}>
-                取消 ({hotkeys.cancel})
-              </Button>
-              <Button size="large" type="primary" onClick={handleSave} loading={saving}>
-                保存 ({hotkeys.save.toUpperCase()})
-              </Button>
-            </>
-          ) : (
-            canEdit && (
-              <>
-                <Button
-                  size="large"
-                  icon={<FlagOutlined />}
-                  onClick={handleMark}
-                  loading={saving}
-                  disabled={task?.status === 'completed'}
-                >
-                  {currentItem?.is_marked ? '取消标记' : '标记'}
-                </Button>
-                {stats.marked > 0 && (
-                  <Button
-                    size="large"
-                    icon={<SendOutlined />}
-                    onClick={handleDelegateMarked}
-                    loading={loading}
-                    disabled={task?.status === 'completed'}
-                  >
-                    生成委派 ({stats.marked})
-                  </Button>
-                )}
-                <Button
-                  size="large"
-                  type="primary"
-                  danger
-                  onClick={handleReject}
-                  loading={saving}
-                  disabled={task?.status === 'completed'}
-                >
-                  拒绝 ({hotkeys.reject.toUpperCase()})
-                </Button>
-                <Button
-                  size="large"
-                  type="primary"
-                  style={{ background: '#52c41a', borderColor: '#52c41a' }}
-                  onClick={handleApprove}
-                  loading={saving}
-                  disabled={task?.status === 'completed'}
-                >
-                  通过 ({hotkeys.approve.toUpperCase()})
-                </Button>
-              </>
-            )
-          )}
-
-          <Button
-            size="large"
-            icon={<RightOutlined />}
-            onClick={goNext}
-            disabled={currentIndex >= totalItems || !!editingField}
-          >
-            下一条
-          </Button>
-        </Space>
-      </div>
-
-      {/* 弹窗 */}
-      <AuthCodeModal
-        open={authCodeModalOpen}
-        onClose={() => setAuthCodeModalOpen(false)}
-        datasetId={parseInt(datasetId || '0')}
-        itemIds={markedItemIds}
-      />
-      <MarkedItemsModal
-        open={markedItemsModalOpen}
-        onClose={() => setMarkedItemsModalOpen(false)}
-        datasetId={parseInt(datasetId || '0')}
-        onGenerateAuthCode={handleGenerateAuthCode}
-        onDelegate={handleDelegateToUser}
-      />
-      <ShareModal
-        open={shareModalOpen}
-        onClose={() => setShareModalOpen(false)}
-        datasetId={parseInt(datasetId || '0')}
-      />
-      <ExportModal
-        open={exportModalOpen}
-        onClose={() => setExportModalOpen(false)}
-        datasetId={parseInt(datasetId || '0')}
-        datasetName={dataset?.name || 'dataset'}
-      />
-      <DelegateModal
-        open={delegateModalOpen}
-        onClose={() => setDelegateModalOpen(false)}
-        datasetId={parseInt(datasetId || '0')}
-        currentItemSeq={currentItem?.seq_num || 1}
-        totalItems={totalItems}
-        itemIds={markedItemIds}
-      />
-
-      {/* 参考文档查看面板 */}
-      {datasetId && (
-        <DocumentViewer
-          datasetId={parseInt(datasetId)}
-          theme={appTheme}
-          onExpandChange={setDocPanelExpanded}
+        {/* 弹窗 */}
+        <AuthCodeModal
+          open={authCodeModalOpen}
+          onClose={() => setAuthCodeModalOpen(false)}
+          datasetId={parseInt(datasetId || '0')}
+          itemIds={markedItemIds}
         />
-      )}
+        <MarkedItemsModal
+          open={markedItemsModalOpen}
+          onClose={() => setMarkedItemsModalOpen(false)}
+          datasetId={parseInt(datasetId || '0')}
+          onGenerateAuthCode={handleGenerateAuthCode}
+          onDelegate={handleDelegateToUser}
+        />
+        <ShareModal
+          open={shareModalOpen}
+          onClose={() => setShareModalOpen(false)}
+          datasetId={parseInt(datasetId || '0')}
+        />
+        <ExportModal
+          open={exportModalOpen}
+          onClose={() => setExportModalOpen(false)}
+          datasetId={parseInt(datasetId || '0')}
+          datasetName={dataset?.name || 'dataset'}
+        />
+        <DelegateModal
+          open={delegateModalOpen}
+          onClose={() => setDelegateModalOpen(false)}
+          datasetId={parseInt(datasetId || '0')}
+          currentItemSeq={currentItem?.seq_num || 1}
+          totalItems={totalItems}
+          itemIds={markedItemIds}
+        />
+
+        {/* 参考文档查看面板 */}
+        {datasetId && (
+          <DocumentViewer
+            datasetId={parseInt(datasetId)}
+            theme={appTheme}
+            onExpandChange={setDocPanelExpanded}
+            onWidthChange={setDocPanelWidth}
+          />
+        )}
       </div>
     </ConfigProvider>
   )

@@ -59,7 +59,7 @@ interface Dataset {
 
 const statusColors: Record<string, string> = {
   importing: 'processing',
-  ready: 'success',
+  ready: 'cyan',
   reviewing: 'warning',
   completed: 'green',
   archived: 'default',
@@ -104,7 +104,9 @@ export default function DatasetsPage() {
   const [folderRefreshTrigger, setFolderRefreshTrigger] = useState(0)
   const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false)
   const [createFolderParentId, setCreateFolderParentId] = useState<number | null>(null)
-  const [createFolderParentName, setCreateFolderParentName] = useState<string | undefined>(undefined)
+  const [createFolderParentName, setCreateFolderParentName] = useState<string | undefined>(
+    undefined
+  )
   const [moveFolderModalOpen, setMoveFolderModalOpen] = useState(false)
   const [moveDatasetId, setMoveDatasetId] = useState<number | null>(null)
   const [moveDatasetName, setMoveDatasetName] = useState<string>('')
@@ -445,9 +447,9 @@ export default function DatasetsPage() {
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setUploadModalOpen(true)}>
               上传文件
             </Button>
-            <Button 
-              type="default" 
-              icon={<FolderOutlined />} 
+            <Button
+              type="default"
+              icon={<FolderOutlined />}
               onClick={() => setDirectoryUploadModalOpen(true)}
             >
               上传目录
@@ -496,18 +498,32 @@ export default function DatasetsPage() {
                   menu={{
                     items: [
                       { key: 'all', label: '所有状态', onClick: () => setStatusFilter(undefined) },
-                      { key: 'importing', label: '导入中', onClick: () => setStatusFilter('importing') },
+                      {
+                        key: 'importing',
+                        label: '导入中',
+                        onClick: () => setStatusFilter('importing'),
+                      },
                       { key: 'ready', label: '待审核', onClick: () => setStatusFilter('ready') },
-                      { key: 'reviewing', label: '审核中', onClick: () => setStatusFilter('reviewing') },
-                      { key: 'completed', label: '已完成', onClick: () => setStatusFilter('completed') },
-                      { key: 'archived', label: '已归档', onClick: () => setStatusFilter('archived') },
+                      {
+                        key: 'reviewing',
+                        label: '审核中',
+                        onClick: () => setStatusFilter('reviewing'),
+                      },
+                      {
+                        key: 'completed',
+                        label: '已完成',
+                        onClick: () => setStatusFilter('completed'),
+                      },
+                      {
+                        key: 'archived',
+                        label: '已归档',
+                        onClick: () => setStatusFilter('archived'),
+                      },
                       { key: 'error', label: '错误', onClick: () => setStatusFilter('error') },
                     ],
                   }}
                 >
-                  <Button>
-                    状态: {statusFilter ? statusLabels[statusFilter] : '全部'}
-                  </Button>
+                  <Button>状态: {statusFilter ? statusLabels[statusFilter] : '全部'}</Button>
                 </Dropdown>
                 <Dropdown
                   menu={{
@@ -520,9 +536,7 @@ export default function DatasetsPage() {
                     ],
                   }}
                 >
-                  <Button>
-                    格式: {formatFilter ? formatFilter.toUpperCase() : '全部'}
-                  </Button>
+                  <Button>格式: {formatFilter ? formatFilter.toUpperCase() : '全部'}</Button>
                 </Dropdown>
                 <Button type="primary" onClick={applyFilters} icon={<SearchOutlined />}>
                   应用筛选
@@ -538,9 +552,7 @@ export default function DatasetsPage() {
                 >
                   清除筛选
                 </Button>
-                <Tag color="blue">
-                  显示 {filteredDatasets.length} 个数据集
-                </Tag>
+                <Tag color="blue">显示 {filteredDatasets.length} 个数据集</Tag>
               </Space>
             </div>
             <Table
@@ -623,7 +635,9 @@ export default function DatasetsPage() {
                     格式: {formatInfo.format_type}
                   </Tag>
                   {formatInfo.confidence > 0 && (
-                    <Tag style={{ marginLeft: 4 }}>置信度: {(formatInfo.confidence * 100).toFixed(0)}%</Tag>
+                    <Tag style={{ marginLeft: 4 }}>
+                      置信度: {(formatInfo.confidence * 100).toFixed(0)}%
+                    </Tag>
                   )}
                 </>
               )}
@@ -653,18 +667,17 @@ export default function DatasetsPage() {
 
             {/* 显示字段覆盖率信息 */}
             {fieldCoverage && Object.entries(fieldCoverage).length > 0 && (
-              <Card
-                size="small"
-                title="字段覆盖率"
-                style={{ marginBottom: 16 }}
-              >
+              <Card size="small" title="字段覆盖率" style={{ marginBottom: 16 }}>
                 <Space wrap>
                   {Object.entries(fieldCoverage).map(([field, coverage]: [string, any]) => {
                     const percent = (coverage * 100).toFixed(0)
-                    const color = coverage >= 0.99 ? '#52c41a' : coverage >= 0.5 ? '#faad14' : '#f5222d'
+                    const color =
+                      coverage >= 0.99 ? '#52c41a' : coverage >= 0.5 ? '#faad14' : '#f5222d'
                     return (
                       <span key={field} style={{ fontSize: 12 }}>
-                        <span style={{ color }}>{field}: {percent}%</span>
+                        <span style={{ color }}>
+                          {field}: {percent}%
+                        </span>
                       </span>
                     )
                   })}

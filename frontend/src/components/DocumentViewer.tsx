@@ -1,4 +1,10 @@
-import { BookOutlined, CloseOutlined, FileImageOutlined, FilePdfOutlined, FileTextOutlined } from '@ant-design/icons'
+import {
+  BookOutlined,
+  CloseOutlined,
+  FileImageOutlined,
+  FilePdfOutlined,
+  FileTextOutlined,
+} from '@ant-design/icons'
 import { Button, Space, Tooltip, Typography } from 'antd'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { referenceDocsApi } from '../services/api'
@@ -22,6 +28,7 @@ interface DocumentViewerProps {
   datasetId: number
   theme?: 'light' | 'dark'
   onExpandChange?: (expanded: boolean) => void
+  onWidthChange?: (width: number) => void
 }
 
 /**
@@ -30,12 +37,17 @@ interface DocumentViewerProps {
  * - 支持拖拽调整宽度
  * - 使用 iframe 渲染 PDF
  */
-function DocumentViewerInner({ datasetId, theme = 'light', onExpandChange }: DocumentViewerProps) {
+function DocumentViewerInner({
+  datasetId,
+  theme = 'light',
+  onExpandChange,
+  onWidthChange,
+}: DocumentViewerProps) {
   const isDark = theme === 'dark'
   const [expanded, setExpanded] = useState(false)
   const [docs, setDocs] = useState<ReferenceDoc[]>([])
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null)
-  const [panelWidth, setPanelWidth] = useState(() => Math.floor(window.innerWidth * 0.5)) // 默认半屏
+  const [panelWidth, setPanelWidth] = useState(() => Math.floor(window.innerWidth * 0.4)) // 修改为40%，避免遮挡太多
   const isDragging = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
@@ -44,6 +56,9 @@ function DocumentViewerInner({ datasetId, theme = 'light', onExpandChange }: Doc
   const handleExpandChange = (newExpanded: boolean) => {
     setExpanded(newExpanded)
     onExpandChange?.(newExpanded)
+    if (newExpanded) {
+      onWidthChange?.(panelWidth)
+    }
   }
 
   // 获取文档列表
@@ -66,19 +81,23 @@ function DocumentViewerInner({ datasetId, theme = 'light', onExpandChange }: Doc
   }, [datasetId])
 
   // 拖拽调整宽度
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    isDragging.current = true
-    startX.current = e.clientX
-    startWidth.current = panelWidth
-    e.preventDefault()
-  }, [panelWidth])
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      isDragging.current = true
+      startX.current = e.clientX
+      startWidth.current = panelWidth
+      e.preventDefault()
+    },
+    [panelWidth]
+  )
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return
       const diff = startX.current - e.clientX
-      const newWidth = Math.max(300, Math.min(900, startWidth.current + diff))
+      const newWidth = Math.max(300, Math.min(1200, startWidth.current + diff))
       setPanelWidth(newWidth)
+      onWidthChange?.(newWidth)
     }
     const handleMouseUp = () => {
       isDragging.current = false
@@ -234,9 +253,11 @@ function DocumentViewerInner({ datasetId, theme = 'light', onExpandChange }: Doc
               }}
               title={selectedDoc.name}
             />
-          ) : ['doc','docx'].includes(selectedDoc.file_type) ? (
+          ) : ['doc', 'docx'].includes(selectedDoc.file_type) ? (
             <DocxPreview docId={selectedDocId} name={selectedDoc.name} getUrl={getDocViewUrl} />
-          ) : ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(selectedDoc.file_type.toLowerCase()) ? (
+          ) : ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(
+              selectedDoc.file_type.toLowerCase()
+            ) ? (
             <div
               style={{
                 width: '100%',
@@ -275,11 +296,7 @@ function DocumentViewerInner({ datasetId, theme = 'light', onExpandChange }: Doc
               <Text type="secondary" style={{ textAlign: 'center' }}>
                 {selectedDoc.file_type.toUpperCase()} 文件暂不支持在线预览
               </Text>
-              <Button
-                type="primary"
-                href={getDocViewUrl(selectedDocId)}
-                target="_blank"
-              >
+              <Button type="primary" href={getDocViewUrl(selectedDocId)} target="_blank">
                 下载查看
               </Button>
             </div>
@@ -324,13 +341,21 @@ function DocumentViewerInner({ datasetId, theme = 'light', onExpandChange }: Doc
                   padding: '6px 12px',
                   borderRadius: 6,
                   cursor: 'pointer',
-                  background: selectedDocId === doc.id
-                    ? (isDark ? '#1890ff' : '#1890ff')
-                    : (isDark ? '#2a2a2a' : '#fff'),
-                  color: selectedDocId === doc.id ? '#fff' : (isDark ? '#e8e8e8' : '#333'),
-                  border: selectedDocId === doc.id
-                    ? 'none'
-                    : (isDark ? '1px solid #434343' : '1px solid #d9d9d9'),
+                  background:
+                    selectedDocId === doc.id
+                      ? isDark
+                        ? '#1890ff'
+                        : '#1890ff'
+                      : isDark
+                        ? '#2a2a2a'
+                        : '#fff',
+                  color: selectedDocId === doc.id ? '#fff' : isDark ? '#e8e8e8' : '#333',
+                  border:
+                    selectedDocId === doc.id
+                      ? 'none'
+                      : isDark
+                        ? '1px solid #434343'
+                        : '1px solid #d9d9d9',
                   transition: 'all 0.2s ease',
                   fontSize: 13,
                 }}

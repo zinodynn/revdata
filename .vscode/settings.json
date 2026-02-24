@@ -1,6 +1,6 @@
 {
     // Python 设置
-    "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/backend"
     ],
@@ -21,7 +21,10 @@
         "editor.tabSize": 4
     },
     "python.formatting.provider": "none", // Disable built-in formatting to use extensions
-    "isort.args": ["--profile", "black"],
+    "isort.args": [
+        "--profile",
+        "black"
+    ],
     // markdown preview settings
     "[markdown]": {
         "editor.defaultFormatter": "vstirbu.vscode-mermaid-preview",
