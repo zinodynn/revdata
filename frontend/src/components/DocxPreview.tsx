@@ -43,7 +43,7 @@ export default function DocxPreview({ docId, name, getUrl }: Props) {
         const mammoth = await import('mammoth')
         const result = await mammoth.convertToHtml({ arrayBuffer })
         if (cancelled) return
-        
+
         // 包装 HTML 并添加样式
         const styledHtml = `
           <style>
@@ -83,8 +83,25 @@ export default function DocxPreview({ docId, name, getUrl }: Props) {
     )
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', overflow: 'auto', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-      {html ? <div style={{ flex: 1, overflow: 'auto', padding: 12, boxSizing: 'border-box' }} dangerouslySetInnerHTML={{ __html: html }} /> : <div>该文档无法预览</div>}
+    <div
+      ref={containerRef}
+      style={{
+        width: '100%',
+        height: '100%',
+        overflow: 'auto',
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {html ? (
+        <div
+          style={{ flex: 1, overflow: 'auto', padding: 12, boxSizing: 'border-box' }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <div>该文档无法预览</div>
+      )}
     </div>
   )
 }

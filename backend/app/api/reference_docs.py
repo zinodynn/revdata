@@ -44,20 +44,21 @@ def convert_word_to_pdf(word_file_path: str) -> str:
     """
     output_dir = os.path.dirname(word_file_path)
     pdf_path = os.path.splitext(word_file_path)[0] + ".pdf"
-    
+
     # 如果 PDF 已存在且比 Word 文件新，直接返回
     if os.path.exists(pdf_path):
         if os.path.getmtime(pdf_path) >= os.path.getmtime(word_file_path):
             print(f"[PDF Convert] Using cached PDF: {pdf_path}")
             return pdf_path
-    
+
     print(f"[PDF Convert] Starting conversion of {word_file_path}")
-    
+
     try:
         # 方案 1: 使用 docx2pdf (推荐用于 Windows，基于 pywin32)
         try:
             print("[PDF Convert] Trying docx2pdf...")
             from docx2pdf import convert
+
             convert(word_file_path, pdf_path)
             if os.path.exists(pdf_path):
                 print(f"[PDF Convert] SUCCESS with docx2pdf")
@@ -66,16 +67,43 @@ def convert_word_to_pdf(word_file_path: str) -> str:
             print("[PDF Convert] docx2pdf not installed")
         except Exception as e:
             print(f"[PDF Convert] docx2pdf failed: {type(e).__name__}: {e}")
-        
+
         # 方案 2: 使用 pypandoc (跨平台，需要安装 pandoc)
         try:
             print("[PDF Convert] Trying pypandoc...")
             import pypandoc
+
+            # 解决中文乱码问题：指定 CJK 字体
+            # Windows: Microsoft YaHei, SimHei, SimSun
+            # Linux: WenQuanYi Micro Hei, Noto Sans CJK SC
+            extra_args = ["--pdf-engine=xelatex"]
+
+            import platform
+
+            system = platform.system()
+            if system == "Windows":
+                extra_args.extend(
+                    [
+                        "-V",
+                        "mainfont=Microsoft YaHei",
+                        "-V",
+                        "CJKmainfont=Microsoft YaHei",
+                    ]
+                )
+            # Linux 暂不强制指定字体，交由系统默认查找，如果 Dockerfile 安装了正确字体，通常能自动识别
+            # 但为了保险，如果 Dockerfile 里安装了 fonts-wqy-microhei，可以指定 WenQuanYi Micro Hei
+            elif system == "Linux":
+                extra_args.extend(
+                    [
+                        "-V",
+                        "mainfont=WenQuanYi Micro Hei",
+                        "-V",
+                        "CJKmainfont=WenQuanYi Micro Hei",
+                    ]
+                )
+
             pypandoc.convert_file(
-                word_file_path,
-                'pdf',
-                outputfile=pdf_path,
-                extra_args=['--pdf-engine=xelatex']
+                word_file_path, "pdf", outputfile=pdf_path, extra_args=extra_args
             )
             if os.path.exists(pdf_path):
                 print(f"[PDF Convert] SUCCESS with pypandoc")
@@ -84,13 +112,14 @@ def convert_word_to_pdf(word_file_path: str) -> str:
             print("[PDF Convert] pypandoc not installed")
         except Exception as e:
             print(f"[PDF Convert] pypandoc failed: {type(e).__name__}: {e}")
-        
+
         # 方案 3: 使用 unoconv (需要 LibreOffice Python API)
         try:
             import subprocess
+
             print("[PDF Convert] Trying unoconv...")
             result = subprocess.run(
-                ['unoconv', '-f', 'pdf', '-o', pdf_path, word_file_path],
+                ["unoconv", "-f", "pdf", "-o", pdf_path, word_file_path],
                 capture_output=True,
                 timeout=30,
                 check=False,
@@ -101,10 +130,11 @@ def convert_word_to_pdf(word_file_path: str) -> str:
             print(f"[PDF Convert] unoconv failed with code {result.returncode}")
         except Exception as e:
             print(f"[PDF Convert] unoconv error: {type(e).__name__}: {e}")
-        
+
         # 方案 4: 使用 LibreOffice 命令行（作为后备方案）
         try:
             import subprocess
+
             print("[PDF Convert] Trying LibreOffice CLI...")
             libreoffice_cmds = [
                 "libreoffice",
@@ -112,7 +142,7 @@ def convert_word_to_pdf(word_file_path: str) -> str:
                 r"C:\Program Files\LibreOffice\program\soffice.exe",
                 r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
             ]
-            
+
             for cmd in libreoffice_cmds:
                 try:
                     result = subprocess.run(
@@ -137,9 +167,11 @@ def convert_word_to_pdf(word_file_path: str) -> str:
             print("[PDF Convert] LibreOffice CLI not available or conversion failed")
         except Exception as e:
             print(f"[PDF Convert] LibreOffice error: {type(e).__name__}: {e}")
-        
+
         # 所有方案都失败
-        print(f"[PDF Convert] All methods failed, will fallback to browser-side conversion")
+        print(
+            f"[PDF Convert] All methods failed, will fallback to browser-side conversion"
+        )
         return ""
     except Exception as e:
         print(f"Word to PDF conversion failed: {e}")
@@ -217,9 +249,7 @@ async def list_reference_docs(
 ):
     """获取数据集的参考文档列表"""
     count_result = await db.execute(
-        select(func.count(ReferenceDoc.id)).where(
-            ReferenceDoc.dataset_id == dataset_id
-        )
+        select(func.count(ReferenceDoc.id)).where(ReferenceDoc.dataset_id == dataset_id)
     )
     total = count_result.scalar()
 
@@ -240,7 +270,7 @@ async def view_reference_doc(
     db: AsyncSession = Depends(get_db),
 ):
     """查看/下载参考文档 (支持通过 query parameter 传递 token 用于 iframe)
-    
+
     Word 文档会自动转换为 PDF 后展示
     """
     # 验证用户身份 (支持 query param token 用于 iframe 场景)
@@ -251,17 +281,11 @@ async def view_reference_doc(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的令牌"
             )
     else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="需要认证"
-        )
-    result = await db.execute(
-        select(ReferenceDoc).where(ReferenceDoc.id == doc_id)
-    )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="需要认证")
+    result = await db.execute(select(ReferenceDoc).where(ReferenceDoc.id == doc_id))
     doc = result.scalar_one_or_none()
     if not doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在")
 
     abs_path = os.path.join(settings.UPLOAD_DIR, doc.file_path)
     if not os.path.exists(abs_path):
@@ -279,17 +303,27 @@ async def view_reference_doc(
                 pdf_path,
                 media_type="application/pdf",
                 filename=filename_pdf,
-                headers={"Content-Disposition": build_content_disposition(filename_pdf, "inline")},
+                headers={
+                    "Content-Disposition": build_content_disposition(
+                        filename_pdf, "inline"
+                    )
+                },
             )
         else:
             # 转换失败，提供原文件下载
             return FileResponse(
                 abs_path,
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                if doc.file_type == "docx"
-                else "application/msword",
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    if doc.file_type == "docx"
+                    else "application/msword"
+                ),
                 filename=doc.name,
-                headers={"Content-Disposition": build_content_disposition(doc.name, "attachment")},
+                headers={
+                    "Content-Disposition": build_content_disposition(
+                        doc.name, "attachment"
+                    )
+                },
             )
 
     # PDF 和其他文件直接返回
@@ -304,7 +338,9 @@ async def view_reference_doc(
         abs_path,
         media_type=media_type,
         filename=doc.name,
-        headers={"Content-Disposition": build_content_disposition(doc.name, disposition)},
+        headers={
+            "Content-Disposition": build_content_disposition(doc.name, disposition)
+        },
     )
 
 
@@ -315,14 +351,10 @@ async def delete_reference_doc(
     current_user: User = Depends(require_admin),
 ):
     """删除参考文档"""
-    result = await db.execute(
-        select(ReferenceDoc).where(ReferenceDoc.id == doc_id)
-    )
+    result = await db.execute(select(ReferenceDoc).where(ReferenceDoc.id == doc_id))
     doc = result.scalar_one_or_none()
     if not doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文档不存在")
 
     # 删除文件
     abs_path = os.path.join(settings.UPLOAD_DIR, doc.file_path)

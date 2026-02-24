@@ -1128,18 +1128,18 @@ async def process_dataset_append(
             end_seq = current_max_seq + len(items_to_add)
             dataset.item_count = (dataset.item_count or 0) + len(items_to_add)
             
-            # 如果原状态是 completed，回退到 reviewing（新数据需要审核）
+            # 如果原状态是 completed，回退到 ready（新数据等待被分配）
             original_status = dataset.status
             if original_status == DatasetStatus.COMPLETED:
-                dataset.status = DatasetStatus.REVIEWING
+                dataset.status = DatasetStatus.READY
                 
-                # 更新关联的已完成任务，将其状态改回 in_progress
-                await db.execute(
-                    update(Task)
-                    .where(Task.dataset_id == dataset_id)
-                    .where(Task.status == "completed")
-                    .values(status="in_progress")
-                )
+                # 更新关联的已完成任务，将其状态改回 in_progress (不需要，因为新增数据不应该影响旧任务)
+                # await db.execute(
+                #     update(Task)
+                #     .where(Task.dataset_id == dataset_id)
+                #     .where(Task.status == "completed")
+                #     .values(status="in_progress")
+                # )
             
             # 更新导入历史记录
             history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
