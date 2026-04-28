@@ -155,6 +155,21 @@ Notes:
 - Only files named `YYYYMMDD_HHMM_name.up.sql` and `YYYYMMDD_HHMM_name.down.sql` are recognized by `manage_db.py`.
 - Legacy SQL files such as `backend/migrations/add_item_source.sql` are not executed automatically during startup or by `manage_db.py`.
 
+#### Docker Auto Migration (Entrypoint)
+The backend container now starts via `backend/entrypoint.sh` and runs controlled migration before uvicorn starts.
+
+Environment variables:
+- `AUTO_MIGRATE=1` (default): execute `python manage_db.py upgrade` before service startup.
+- `AUTO_MIGRATE=0`: skip migration and start service directly.
+- `MIGRATE_FAKE=1`: execute `python manage_db.py upgrade --fake` for version alignment only.
+
+Examples:
+- Normal startup with migration: `docker-compose up -d backend`
+- Skip migration: `AUTO_MIGRATE=0 docker-compose up -d backend`
+- Fake alignment: `MIGRATE_FAKE=1 docker-compose up -d backend`
+
+If some environments have previously manually executed add_item_source.sql, automatic upgrade may still fail because the fields already exist. At this point, it is more stable to align once with MIGRATE_FAKE=1
+
 ### Default Account
 Register via API:
 ```bash
@@ -297,6 +312,19 @@ python manage_db.py upgrade
 - 只有命名为 `YYYYMMDD_HHMM_name.up.sql` 和 `YYYYMMDD_HHMM_name.down.sql` 的迁移文件会被 `manage_db.py` 识别并记录到 `schema_migrations`。
 - 像 `backend/migrations/add_item_source.sql` 这类历史 SQL 文件，不会在应用启动时自动执行，也不会被 `manage_db.py` 自动纳入升级流程。
 - 建议发布顺序为：备份数据库 -> 拉取新版本代码 -> 执行 `python manage_db.py upgrade` -> 启动或重启应用 -> 验证关键功能。
+
+#### Docker 自动迁移（Entrypoint）
+后端容器已通过 `backend/entrypoint.sh` 启动，默认会在 uvicorn 启动前执行受控迁移。
+
+可用环境变量：
+- `AUTO_MIGRATE=1`（默认）：启动前执行 `python manage_db.py upgrade`
+- `AUTO_MIGRATE=0`：跳过迁移，直接启动服务
+- `MIGRATE_FAKE=1`：执行 `python manage_db.py upgrade --fake`，仅做迁移版本对齐
+
+示例：
+- 正常自动迁移启动：`docker-compose up -d backend`
+- 跳过迁移启动：`AUTO_MIGRATE=0 docker-compose up -d backend`
+- 仅 fake 对齐：`MIGRATE_FAKE=1 docker-compose up -d backend`
 
 ### 默认账户
 首次使用需要通过 API 注册用户:

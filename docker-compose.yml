@@ -30,6 +30,8 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
       ROOT_PATH: ${APP_ROOT_PATH:-}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-1}
+      MIGRATE_FAKE: ${MIGRATE_FAKE:-0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,7 +39,7 @@ services:
         condition: service_started
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: /app/entrypoint.sh
 
   frontend:
     build:
