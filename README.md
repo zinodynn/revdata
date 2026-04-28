@@ -5,6 +5,8 @@
 ## Overview
 A full-stack platform for collaborative dataset review, supporting multi-role workflows, task assignment, authorization code delegation, and real-time statistics. Built with FastAPI (backend) and React (frontend).
 
+> For the latest changes, see the [CHANGELOG](CHANGELOG.md).
+
 ---
 
 ## Architecture Preview
