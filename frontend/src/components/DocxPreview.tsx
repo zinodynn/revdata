@@ -6,7 +6,7 @@ interface Props {
   getUrl: (id: number) => string
 }
 
-export default function DocxPreview({ docId, name, getUrl }: Props) {
+export default function DocxPreview({ docId, getUrl }: Props) {
   const [html, setHtml] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
