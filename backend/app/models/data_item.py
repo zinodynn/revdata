@@ -9,6 +9,11 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 
+class ItemSource(str, enum.Enum):
+    IMPORTED = "imported"  # 导入的数据
+    USER_ADDED = "user_added"  # 用户手动添加
+
+
 class ItemType(str, enum.Enum):
     PLAIN = "plain"  # 纯文本语料
     QA = "qa"  # 对话QA语料
@@ -43,8 +48,20 @@ class DataItem(Base):
     )
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # 新增字段: 语料来源
+    source = Column(
+        SQLEnum(ItemSource, values_callable=lambda x: [e.value for e in x]),
+        default=ItemSource.IMPORTED,
+        nullable=False,
+    )
+    added_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     dataset = relationship("Dataset", back_populates="items")

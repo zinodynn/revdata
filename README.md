@@ -142,6 +142,19 @@ docker-compose up -d
 ```
 Visit: http://localhost
 
+### Database Migrations
+For existing databases, application restart does not automatically update table structure. Run versioned SQL migrations before starting the new backend:
+
+```bash
+cd backend
+python manage_db.py upgrade
+```
+
+Notes:
+- `app.main` only calls `Base.metadata.create_all()`, which creates missing tables but does not run `ALTER TABLE` on existing ones.
+- Only files named `YYYYMMDD_HHMM_name.up.sql` and `YYYYMMDD_HHMM_name.down.sql` are recognized by `manage_db.py`.
+- Legacy SQL files such as `backend/migrations/add_item_source.sql` are not executed automatically during startup or by `manage_db.py`.
+
 ### Default Account
 Register via API:
 ```bash
@@ -270,6 +283,20 @@ npm run dev
 docker-compose up -d
 ```
 访问: http://localhost
+
+### 数据库迁移
+对于已存在数据的环境，应用重启不会自动更新表结构。发布新版本前，请先执行版本化 SQL 迁移，再启动新后端：
+
+```bash
+cd backend
+python manage_db.py upgrade
+```
+
+说明：
+- 应用启动时只会执行 `Base.metadata.create_all()`，它只能补建不存在的表，不能对旧表自动执行 `ALTER TABLE`。
+- 只有命名为 `YYYYMMDD_HHMM_name.up.sql` 和 `YYYYMMDD_HHMM_name.down.sql` 的迁移文件会被 `manage_db.py` 识别并记录到 `schema_migrations`。
+- 像 `backend/migrations/add_item_source.sql` 这类历史 SQL 文件，不会在应用启动时自动执行，也不会被 `manage_db.py` 自动纳入升级流程。
+- 建议发布顺序为：备份数据库 -> 拉取新版本代码 -> 执行 `python manage_db.py upgrade` -> 启动或重启应用 -> 验证关键功能。
 
 ### 默认账户
 首次使用需要通过 API 注册用户:

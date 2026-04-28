@@ -1,10 +1,12 @@
 import {
   ArrowLeftOutlined,
+  BulbOutlined,
   CheckCircleOutlined,
   DownloadOutlined,
   FastForwardOutlined,
   FlagOutlined,
   LeftOutlined,
+  PlusOutlined,
   RightOutlined,
   SendOutlined,
   ShareAltOutlined,
@@ -19,6 +21,7 @@ import {
   Spin,
   Statistic,
   Tag,
+  Tooltip,
   Typography,
   theme as antdTheme,
   message,
@@ -26,6 +29,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import AddItemModal from '../components/AddItemModal'
 import AuthCodeModal from '../components/AuthCodeModal'
 import DelegateModal from '../components/DelegateModal'
 import DocumentViewer from '../components/DocumentViewer'
@@ -120,6 +124,7 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
   const [delegateModalOpen, setDelegateModalOpen] = useState(false)
   const [authCodeModalOpen, setAuthCodeModalOpen] = useState(false)
   const [markedItemsModalOpen, setMarkedItemsModalOpen] = useState(false)
+  const [addItemModalOpen, setAddItemModalOpen] = useState(false)
   const [markedItemIds, setMarkedItemIds] = useState<number[]>([])
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
@@ -981,6 +986,13 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
                       待定
                     </Tag>
                   )}
+                  {currentItem?.source === 'user_added' && (
+                    <Tooltip title={`由用户 #${currentItem.added_by} 添加`}>
+                      <Tag color="purple" icon={<BulbOutlined />}>
+                        新增数据
+                      </Tag>
+                    </Tooltip>
+                  )}
                 </Space>
                 {/* 描述字段区域 */}
                 {dataset?.description && (
@@ -1115,6 +1127,17 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
               上一条
             </Button>
 
+            <Tooltip title="有新的灵感？可以在此补充一条数据">
+              <Button
+                size="large"
+                icon={<PlusOutlined />}
+                onClick={() => setAddItemModalOpen(true)}
+                disabled={!!editingField || task?.status === 'completed'}
+              >
+                新增问题
+              </Button>
+            </Tooltip>
+
             {editingField ? (
               <>
                 <Button size="large" onClick={handleCancel}>
@@ -1195,6 +1218,15 @@ export default function ReviewPageV2({ shareToken, sharePermission }: ReviewPage
           datasetId={parseInt(datasetId || '0')}
           onGenerateAuthCode={handleGenerateAuthCode}
           onDelegate={handleDelegateToUser}
+        />
+        <AddItemModal
+          open={addItemModalOpen}
+          onClose={() => setAddItemModalOpen(false)}
+          datasetId={parseInt(datasetId || '0')}
+          onSuccess={() => {
+            // 刷新统计和总数
+            fetchItem(currentIndex)
+          }}
         />
         <ShareModal
           open={shareModalOpen}

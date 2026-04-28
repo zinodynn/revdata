@@ -76,8 +76,8 @@ export const authApi = {
 // Datasets API
 export const datasetsApi = {
   list: (
-    page = 1, 
-    pageSize = 20, 
+    page = 1,
+    pageSize = 20,
     folderId?: number | null,
     keyword?: string,
     status?: string,
@@ -110,10 +110,17 @@ export const datasetsApi = {
     api.post('/datasets/transfer-all', null, {
       params: { from_user_id: fromUserId, to_user_id: toUserId },
     }),
-  delete: (id: number) => api.delete(`/datasets/${id}`),
+  delete: (id: number, force?: boolean) =>
+    api.delete(`/datasets/${id}`, { params: force ? { force: true } : undefined }),
+  getTasks: (datasetId: number) => api.get(`/datasets/${datasetId}/tasks`),
   move: (id: number, folderId: number | null) =>
     api.put(`/datasets/${id}/move`, { folder_id: folderId }),
-  upload: (file: File, name: string, description?: string, onUploadProgress?: (progressEvent: any) => void) => {
+  upload: (
+    file: File,
+    name: string,
+    description?: string,
+    onUploadProgress?: (progressEvent: any) => void
+  ) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('name', name)
@@ -137,13 +144,16 @@ export const datasetsApi = {
     if (baseFolderId) {
       formData.append('base_folder_id', baseFolderId.toString())
     }
-    
+
     // 日志：显示正在发送的FormData
     console.log('[api.uploadDirectory] FormData contents:')
     console.log('  Files count:', files.length)
-    console.log('  Files:', files.map(f => ({ name: f.name, size: f.size })))
+    console.log(
+      '  Files:',
+      files.map((f) => ({ name: f.name, size: f.size }))
+    )
     console.log('  Path mapping:', pathMapping)
-    
+
     return api.post('/datasets/upload-directory', formData, {
       timeout: 30 * 60 * 1000, // 30 minutes for large uploads
       onUploadProgress,
@@ -155,11 +165,7 @@ export const datasetsApi = {
     formData.append('file', file)
     return api.post('/datasets/detect-fields', formData)
   },
-  append: (
-    datasetId: number,
-    file: File,
-    skipDuplicates: boolean = false,
-  ) => {
+  append: (datasetId: number, file: File, skipDuplicates: boolean = false) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('skip_duplicates', skipDuplicates.toString())
@@ -171,7 +177,8 @@ export const datasetsApi = {
   getDedupDefaults: () => api.get('/datasets/dedup-defaults'),
   setDedupDefaults: (config: any) => api.put('/datasets/dedup-defaults', config),
   getImportHistory: (datasetId: number) => api.get(`/datasets/${datasetId}/import-history`),
-  rollbackImport: (datasetId: number, historyId: number) => api.post(`/datasets/${datasetId}/import-history/${historyId}/rollback`),
+  rollbackImport: (datasetId: number, historyId: number) =>
+    api.post(`/datasets/${datasetId}/import-history/${historyId}/rollback`),
 }
 
 // Items API
@@ -202,6 +209,8 @@ export const itemsApi = {
   ) => api.put(`/items/${id}`, data),
   approve: (id: number) => api.post(`/items/${id}/approve`),
   reject: (id: number) => api.post(`/items/${id}/reject`),
+  create: (data: { dataset_id: number; item_type: 'qa' | 'plain'; content: any }) =>
+    api.post('/items/create', data),
 }
 
 // Tasks API
@@ -218,6 +227,7 @@ export const tasksApi = {
   markReviewed: (id: number) => api.post(`/tasks/${id}/mark-reviewed`),
   getUsers: () => api.get('/tasks/users/list'),
   delegationHistory: (taskId: number) => api.get(`/tasks/${taskId}/delegation-history`),
+  cancel: (taskId: number) => api.delete(`/tasks/${taskId}`),
 }
 
 // Share API

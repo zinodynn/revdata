@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -14,16 +14,63 @@ from app.api.deps import (
 )
 from app.core.database import get_db
 from app.models.auth_code import AuthCode, AuthCodeSession
-from app.models.data_item import DataItem, ItemStatus
+from app.models.data_item import DataItem, ItemStatus, ItemSource
+from app.models.dataset import Dataset
 from app.models.revision import Revision
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.data_item import DataItemListResponse, DataItemResponse, DataItemUpdate
+from app.schemas.data_item import (
+    DataItemCreate,
+    DataItemListResponse,
+    DataItemResponse,
+    DataItemUpdate,
+)
 from app.utils import normalize_json_keys
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.post(
+    "/create", response_model=DataItemResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_item(
+    item_data: DataItemCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """在审核过程中手动创建语料"""
+    # 获取当前数据集中最大的 seq_num
+    max_seq_result = await db.execute(
+        select(func.max(DataItem.seq_num)).where(
+            DataItem.dataset_id == item_data.dataset_id
+        )
+    )
+    current_max_seq = max_seq_result.scalar() or 0
+
+    new_item = DataItem(
+        dataset_id=item_data.dataset_id,
+        seq_num=current_max_seq + 1,
+        item_type=item_data.item_type,
+        original_content=item_data.content,
+        current_content=item_data.content,
+        status=ItemStatus.PENDING,  # 初始状态为待审核
+        source=ItemSource.USER_ADDED,
+        added_by=current_user.id,
+    )
+    db.add(new_item)
+
+    # 更新数据集的 item_count
+    await db.execute(
+        update(Dataset)
+        .where(Dataset.id == item_data.dataset_id)
+        .values(item_count=Dataset.item_count + 1)
+    )
+
+    await db.commit()
+    await db.refresh(new_item)
+    return new_item
 
 
 @router.get("/dataset/{dataset_id}", response_model=DataItemListResponse)

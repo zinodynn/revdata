@@ -6,9 +6,19 @@ import uuid
 import zipfile
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import func, select, update
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_current_user, require_admin
 from app.core.config import settings
@@ -19,7 +29,7 @@ from app.models.data_item import DataItem, ItemStatus, ItemType
 from app.models.dataset import Dataset, DatasetFormat, DatasetStatus
 from app.models.folder import Folder
 from app.models.import_history import ImportHistory, ImportOperationType, ImportStatus
-from app.models.task import Task
+from app.models.task import Task, TaskStatus
 from app.models.user import User, UserRole
 from app.schemas.dataset import (
     AppendResult,
@@ -31,7 +41,11 @@ from app.schemas.dataset import (
     FieldMapping,
 )
 from app.schemas.folder import DatasetMoveRequest
-from app.services.dedup import create_deduplicator, extract_query_text, get_dedup_index_path
+from app.services.dedup import (
+    create_deduplicator,
+    extract_query_text,
+    get_dedup_index_path,
+)
 from app.utils import normalize_json_keys, FieldDetectionUtils
 
 router = APIRouter()
@@ -211,11 +225,11 @@ async def upload_dataset(
     os.makedirs(save_dir, exist_ok=True)
 
     file_path = os.path.join(save_dir, file.filename)
-    
+
     # 使用 chunk 写入, 避免内存溢出
     with open(file_path, "wb") as buffer:
         while True:
-            chunk = await file.read(1024 * 1024 * 10) # 10MB chunks
+            chunk = await file.read(1024 * 1024 * 10)  # 10MB chunks
             if not chunk:
                 break
             buffer.write(chunk)
@@ -251,20 +265,29 @@ async def upload_dataset(
 
     # 添加后台任务
     background_tasks.add_task(
-        process_dataset_import, dataset.id, file_path, is_zip, format_type, import_history.id
+        process_dataset_import,
+        dataset.id,
+        file_path,
+        is_zip,
+        format_type,
+        import_history.id,
     )
 
     return dataset
 
 
 async def process_dataset_import(
-    dataset_id: int, file_path: str, is_zip: bool, format_type: DatasetFormat, import_history_id: int
+    dataset_id: int,
+    file_path: str,
+    is_zip: bool,
+    format_type: DatasetFormat,
+    import_history_id: int,
 ):
     """
     后台处理数据集导入任务
     """
     import asyncio
-    
+
     async with AsyncSessionLocal() as db:
         try:
             # 获取数据集和导入历史记录
@@ -272,8 +295,10 @@ async def process_dataset_import(
             dataset = result.scalar_one_or_none()
             if not dataset:
                 return
-            
-            history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+
+            history_result = await db.execute(
+                select(ImportHistory).where(ImportHistory.id == import_history_id)
+            )
             import_history = history_result.scalar_one_or_none()
             if not import_history:
                 return
@@ -284,11 +309,11 @@ async def process_dataset_import(
 
             if is_zip:
                 extract_dir = save_dir
-                
+
                 def unzip_file():
                     with zipfile.ZipFile(file_path, "r") as zip_ref:
                         zip_ref.extractall(extract_dir)
-                
+
                 await asyncio.to_thread(unzip_file)
 
                 # 寻找数据文件
@@ -312,15 +337,15 @@ async def process_dataset_import(
                     raise Exception("ZIP包中未找到支持的数据文件(.jsonl/.json)")
 
             # 更新 source_file (存储相对路径)
-            relative_path = os.path.relpath(data_file_path, settings.UPLOAD_DIR).replace(
-                "\\", "/"
-            )
+            relative_path = os.path.relpath(
+                data_file_path, settings.UPLOAD_DIR
+            ).replace("\\", "/")
             dataset.source_file = relative_path
             dataset.format = format_type
 
             # 读取并解析文件内容
             items = []
-            
+
             def read_content():
                 read_items = []
                 with open(data_file_path, "r", encoding="utf-8") as f:
@@ -365,7 +390,7 @@ async def process_dataset_import(
             # 更新数据集状态
             dataset.item_count = len(items)
             dataset.status = DatasetStatus.READY
-            
+
             # 更新导入历史记录
             import_history.status = ImportStatus.COMPLETED
             import_history.total_items = len(items)
@@ -373,16 +398,18 @@ async def process_dataset_import(
             import_history.start_seq = 1
             import_history.end_seq = len(items)
             import_history.completed_at = func.now()
-            
+
             await db.commit()
-            
+
         except Exception as e:
             print(f"Error processing dataset {dataset_id}: {e}")
             await db.rollback()
-            
+
             # 更新导入历史记录为失败
             try:
-                history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+                history_result = await db.execute(
+                    select(ImportHistory).where(ImportHistory.id == import_history_id)
+                )
                 import_history = history_result.scalar_one_or_none()
                 if import_history:
                     import_history.status = ImportStatus.FAILED
@@ -391,10 +418,12 @@ async def process_dataset_import(
                     await db.commit()
             except:
                 pass
-            
+
             # 设置数据集错误状态
             try:
-                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                result = await db.execute(
+                    select(Dataset).where(Dataset.id == dataset_id)
+                )
                 dataset = result.scalar_one_or_none()
                 if dataset:
                     dataset.status = DatasetStatus.ERROR
@@ -402,7 +431,6 @@ async def process_dataset_import(
                     await db.commit()
             except:
                 pass
-
 
 
 @router.get("", response_model=DatasetListResponse)
@@ -420,7 +448,7 @@ async def list_datasets(
 ):
     """
     获取数据集列表，支持多种筛选条件
-    
+
     参数：
     - folder_id: 按目录筛选
     - keyword: 关键词搜索（名称或描述）
@@ -433,40 +461,42 @@ async def list_datasets(
 
     # 构建查询条件
     conditions = []
-    
+
     # 目录筛选
     if folder_id is not None:
         conditions.append(Dataset.folder_id == folder_id)
-    
+
     # 关键词搜索
     if keyword:
         keyword_pattern = f"%{keyword}%"
         conditions.append(
-            (Dataset.name.ilike(keyword_pattern)) | 
-            (Dataset.description.ilike(keyword_pattern))
+            (Dataset.name.ilike(keyword_pattern))
+            | (Dataset.description.ilike(keyword_pattern))
         )
-    
+
     # 状态筛选
     if status:
         conditions.append(Dataset.status == status)
-    
+
     # 格式筛选
     if format:
         conditions.append(Dataset.format == format.lower())
-    
+
     # 日期范围筛选
     if start_date:
         try:
             from datetime import datetime
-            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
             conditions.append(Dataset.created_at >= start_dt)
         except ValueError:
             pass
-    
+
     if end_date:
         try:
             from datetime import datetime
-            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
             conditions.append(Dataset.created_at <= end_dt)
         except ValueError:
             pass
@@ -479,7 +509,12 @@ async def list_datasets(
     total = count_result.scalar()
 
     # 查询数据
-    query = select(Dataset).order_by(Dataset.created_at.desc()).offset(offset).limit(page_size)
+    query = (
+        select(Dataset)
+        .order_by(Dataset.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
     if conditions:
         query = query.where(*conditions)
     result = await db.execute(query)
@@ -494,22 +529,22 @@ async def list_datasets(
 async def get_dedup_defaults_api(current_user: User = Depends(get_current_user)):
     """
     获取有效的去重默认配置
-    
+
     返回优先级：
     1. global_config.json 中保存的用户设置（如果存在）
     2. .env 中的系统级默认值
     3. 代码中的内置默认值
-    
+
     这个接口用于前端显示"应用默认配置"按钮的内容
     """
     # 首先尝试获取用户保存的全局配置（global_config.json）
     user_saved_defaults = get_dedup_defaults()
-    
+
     if user_saved_defaults:
         # 用户已保存过全局配置，返回已保存的配置
         # （这些配置可能是从系统级配置导出的）
         return user_saved_defaults
-    
+
     # 如果用户没有保存过，返回系统级配置（从 .env 读取）
     system_defaults = DedupConfigManager.get_system_dedup_defaults()
     return system_defaults
@@ -521,7 +556,7 @@ async def set_dedup_defaults_api(
 ):
     """
     设置全局去重默认配置（仅管理员）
-    
+
     这会保存用户自定义的全局默认配置到 global_config.json
     如果删除 global_config.json，系统会回退到 .env 中的系统级配置
     """
@@ -679,6 +714,7 @@ async def move_dataset(
 @router.delete("/{dataset_id}")
 async def delete_dataset(
     dataset_id: int,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -708,7 +744,7 @@ async def delete_dataset(
         )
     )
     active_tasks = task_result.scalar()
-    if active_tasks > 0:
+    if active_tasks > 0 and not force:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"该数据集还有 {active_tasks} 个未完成的任务，请先删除或完成任务后再删除数据集",
@@ -718,6 +754,92 @@ async def delete_dataset(
     await db.commit()
 
     return {"message": "数据集已删除"}
+
+
+@router.get("/{dataset_id}/tasks")
+async def list_dataset_tasks(
+    dataset_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取数据集的所有任务列表"""
+    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+    dataset = result.scalar_one_or_none()
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在"
+        )
+
+    # 权限：所有者或管理员
+    if (
+        current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN)
+        and dataset.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="无权查看该数据集的任务"
+        )
+
+    tasks_result = await db.execute(
+        select(Task)
+        .options(joinedload(Task.assigner), joinedload(Task.assignee))
+        .where(Task.dataset_id == dataset_id)
+        .order_by(Task.created_at.desc())
+    )
+    tasks = tasks_result.scalars().all()
+
+    task_list = []
+    for task in tasks:
+        if task.item_ids:
+            total_items = len(task.item_ids)
+            reviewed_result = await db.execute(
+                select(func.count(DataItem.id)).where(
+                    and_(
+                        DataItem.id.in_(task.item_ids),
+                        DataItem.status != ItemStatus.PENDING,
+                    )
+                )
+            )
+        else:
+            total_items = task.item_end - task.item_start + 1
+            reviewed_result = await db.execute(
+                select(func.count(DataItem.id)).where(
+                    and_(
+                        DataItem.dataset_id == task.dataset_id,
+                        DataItem.seq_num >= task.item_start,
+                        DataItem.seq_num <= task.item_end,
+                        DataItem.status != ItemStatus.PENDING,
+                    )
+                )
+            )
+        reviewed_items = reviewed_result.scalar()
+
+        task_list.append(
+            {
+                "id": task.id,
+                "dataset_id": task.dataset_id,
+                "assigner_id": task.assigner_id,
+                "assigner_name": task.assigner.username if task.assigner else None,
+                "assignee_id": task.assignee_id,
+                "assignee_name": task.assignee.username if task.assignee else None,
+                "item_start": task.item_start,
+                "item_end": task.item_end,
+                "item_ids": task.item_ids,
+                "status": task.status.value,
+                "priority": task.priority,
+                "note": task.note,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "delegated_from_task_id": task.delegated_from_task_id,
+                "reviewed_by_assigner": task.reviewed_by_assigner,
+                "created_at": task.created_at.isoformat(),
+                "completed_at": (
+                    task.completed_at.isoformat() if task.completed_at else None
+                ),
+                "total_items": total_items,
+                "reviewed_items": reviewed_items,
+            }
+        )
+
+    return {"items": task_list, "total": len(task_list)}
 
 
 @router.get("/{dataset_id}/preview")
@@ -769,7 +891,7 @@ async def detect_fields_from_file(
     file: UploadFile = File(...), current_user: User = Depends(get_current_user)
 ):
     """预览文件并检测字段（上传前预览）
-    
+
     功能：
     1. 扫描所有字段（不仅仅是前10条记录）
     2. 对于ZIP文件，分析所有JSONL/JSON文件
@@ -832,7 +954,7 @@ async def detect_fields_from_file(
                                 file_items = data
                             else:
                                 file_items = [data]
-                    
+
                     all_items_by_file[data_file] = file_items
                     items.extend(file_items)
 
@@ -882,15 +1004,13 @@ async def detect_fields_from_file(
 
     # 检测数据格式
     format_info = FieldDetectionUtils.detect_format_type(items)
-    
+
     # 检测字段一致性
     consistency_check = FieldDetectionUtils.check_field_consistency(items)
     if consistency_check["conflicts"]:
         warnings.extend(consistency_check["conflicts"])
     if consistency_check["recommendations"]:
-        warnings.extend(
-            [f"💡 {r}" for r in consistency_check["recommendations"]]
-        )
+        warnings.extend([f"💡 {r}" for r in consistency_check["recommendations"]])
 
     # 检测字段
     detected_fields, suggested_mapping = detect_fields_from_content(items)
@@ -903,9 +1023,7 @@ async def detect_fields_from_file(
         warnings=warnings if warnings else None,
         format_info=format_info,
         field_coverage=(
-            consistency_check["field_coverage"]
-            if consistency_check
-            else None
+            consistency_check["field_coverage"] if consistency_check else None
         ),
     )
 
@@ -1053,7 +1171,7 @@ async def process_dataset_append(
             items_to_add = items
 
             dedup_config = dataset.dedup_config or {}
-            
+
             if skip_duplicates:
                 # 使用配置管理器获取有效的去重配置（支持三层优先级）
                 effective_config = DedupConfigManager.merge_configs(dedup_config)
@@ -1067,7 +1185,7 @@ async def process_dataset_append(
 
                 # 尝试加载已有索引
                 index_path = get_dedup_index_path(dataset_id, use_embedding)
-                
+
                 if not deduplicator.load_index(index_path):
                     # 没有索引文件, 从现有数据构建
                     existing_result = await db.execute(
@@ -1076,7 +1194,7 @@ async def process_dataset_append(
                         )
                     )
                     existing_contents = existing_result.scalars().all()
-                    
+
                     existing_texts = [
                         extract_query_text(c, query_field)
                         for c in existing_contents
@@ -1095,11 +1213,9 @@ async def process_dataset_append(
                 for item, is_dup in zip(items, dup_flags):
                     if is_dup:
                         skipped += 1
-                    else: 
+                    else:
                         items_to_add.append(item)
-                        non_dup_texts.append(
-                            extract_query_text(item, query_field)
-                        )
+                        non_dup_texts.append(extract_query_text(item, query_field))
 
                 # 将非重复项追加到索引并保存
                 if non_dup_texts:
@@ -1127,12 +1243,12 @@ async def process_dataset_append(
             start_seq = current_max_seq + 1
             end_seq = current_max_seq + len(items_to_add)
             dataset.item_count = (dataset.item_count or 0) + len(items_to_add)
-            
+
             # 如果原状态是 completed，回退到 ready（新数据等待被分配）
             original_status = dataset.status
             if original_status == DatasetStatus.COMPLETED:
                 dataset.status = DatasetStatus.READY
-                
+
                 # 更新关联的已完成任务，将其状态改回 in_progress (不需要，因为新增数据不应该影响旧任务)
                 # await db.execute(
                 #     update(Task)
@@ -1140,9 +1256,11 @@ async def process_dataset_append(
                 #     .where(Task.status == "completed")
                 #     .values(status="in_progress")
                 # )
-            
+
             # 更新导入历史记录
-            history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+            history_result = await db.execute(
+                select(ImportHistory).where(ImportHistory.id == import_history_id)
+            )
             import_history = history_result.scalar_one_or_none()
             if import_history:
                 import_history.status = ImportStatus.COMPLETED
@@ -1152,7 +1270,7 @@ async def process_dataset_append(
                 import_history.start_seq = start_seq
                 import_history.end_seq = end_seq
                 import_history.completed_at = func.now()
-            
+
             await db.commit()
 
             print(
@@ -1164,10 +1282,12 @@ async def process_dataset_append(
         except Exception as e:
             print(f"Error appending to dataset {dataset_id}: {e}")
             await db.rollback()
-            
+
             # 更新导入历史为失败
             try:
-                history_result = await db.execute(select(ImportHistory).where(ImportHistory.id == import_history_id))
+                history_result = await db.execute(
+                    select(ImportHistory).where(ImportHistory.id == import_history_id)
+                )
                 import_history = history_result.scalar_one_or_none()
                 if import_history:
                     import_history.status = ImportStatus.FAILED
@@ -1181,29 +1301,26 @@ async def process_dataset_append(
 # 文件类型过滤辅助函数
 def is_data_file(filename: str) -> bool:
     """判断是否为数据文件"""
-    data_extensions = {'.jsonl', '.json', '.csv', '.tsv', '.parquet'}
+    data_extensions = {".jsonl", ".json", ".csv", ".tsv", ".parquet"}
     return any(filename.lower().endswith(ext) for ext in data_extensions)
 
 
 def is_asset_file(filename: str) -> bool:
     """判断是否为需要保留的资源文件（如图片）"""
-    asset_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
+    asset_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
     return any(filename.lower().endswith(ext) for ext in asset_extensions)
 
 
 def should_keep_file(filename: str) -> bool:
     """判断文件是否应该保留"""
     # 跳过隐藏文件和系统文件
-    if filename.startswith('.') or filename.startswith('__'):
+    if filename.startswith(".") or filename.startswith("__"):
         return False
     return is_data_file(filename) or is_asset_file(filename)
 
 
 async def get_or_create_folder(
-    db: AsyncSession,
-    folder_name: str,
-    parent_id: Optional[int],
-    owner_id: int
+    db: AsyncSession, folder_name: str, parent_id: Optional[int], owner_id: int
 ) -> int:
     """获取或创建目录"""
     # 查找现有目录
@@ -1211,28 +1328,22 @@ async def get_or_create_folder(
         select(Folder).where(
             Folder.name == folder_name,
             Folder.parent_id == parent_id,
-            Folder.owner_id == owner_id
+            Folder.owner_id == owner_id,
         )
     )
     existing = result.scalar_one_or_none()
     if existing:
         return existing.id
-    
+
     # 创建新目录
-    new_folder = Folder(
-        name=folder_name,
-        parent_id=parent_id,
-        owner_id=owner_id
-    )
+    new_folder = Folder(name=folder_name, parent_id=parent_id, owner_id=owner_id)
     db.add(new_folder)
     await db.flush()
     return new_folder.id
 
 
 @router.post(
-    "/upload-directory", 
-    response_model=dict,
-    status_code=status.HTTP_201_CREATED
+    "/upload-directory", response_model=dict, status_code=status.HTTP_201_CREATED
 )
 async def upload_directory(
     background_tasks: BackgroundTasks,
@@ -1250,57 +1361,60 @@ async def upload_directory(
     - 权限：管理员创建的目录自动归属到该管理员，超级管理员可见所有
     """
     import json as json_lib
-    
+
     try:
         path_mapping = json_lib.loads(paths)
     except:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="路径映射格式错误"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="路径映射格式错误"
         )
-    
+
     print(f"\n{'='*60}")
     print(f"[upload_directory] START - Received {len(files)} files")
     print(f"[upload_directory] path_mapping keys: {list(path_mapping.keys())}")
     print(f"[upload_directory] path_mapping: {path_mapping}")
     print(f"{'='*60}\n")
-    
+
     # 基础上传目录
     upload_id = str(uuid.uuid4())
     base_dir = os.path.join(settings.UPLOAD_DIR, upload_id)
     os.makedirs(base_dir, exist_ok=True)
-    
+
     # 按目录组织文件
-    folder_files: dict[str, list] = {}  # folder_path -> [(file_path, file_obj, filename)]
-    
+    folder_files: dict[str, list] = (
+        {}
+    )  # folder_path -> [(file_path, file_obj, filename)]
+
     for i, file in enumerate(files):
         filename = file.filename
         in_mapping = filename in path_mapping
-        print(f"[upload_directory] [{i+1}/{len(files)}] file.filename='{filename}', in_mapping={in_mapping}")
-        
+        print(
+            f"[upload_directory] [{i+1}/{len(files)}] file.filename='{filename}', in_mapping={in_mapping}"
+        )
+
         if filename not in path_mapping:
             print(f"  → ❌ Skipping - NOT in path_mapping")
             continue
-        
+
         relative_path = path_mapping[filename]
         should_keep = should_keep_file(filename)
         is_data = is_data_file(filename)
         is_asset = is_asset_file(filename)
-        
+
         print(f"  → relative_path='{relative_path}'")
         print(f"  → should_keep={should_keep}, is_data={is_data}, is_asset={is_asset}")
-        
+
         # 跳过不需要的文件
         if not should_keep:
             print(f"  → ❌ Skipping - not a data or asset file")
             continue
-        
+
         print(f"  → ✅ File will be processed")
-        
+
         # 保存文件
         full_path = os.path.join(base_dir, relative_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        
+
         print(f"  → Saving to: {full_path}")
         with open(full_path, "wb") as buffer:
             while True:
@@ -1309,13 +1423,13 @@ async def upload_directory(
                     break
                 buffer.write(chunk)
         print(f"  → ✓ File saved, size: {os.path.getsize(full_path)} bytes")
-        
+
         # 解析目录路径
         folder_path = os.path.dirname(relative_path)
         if folder_path not in folder_files:
             folder_files[folder_path] = []
         folder_files[folder_path].append((full_path, file, filename))
-    
+
     # 调试日志：显示文件的文件夹分组
     print(f"\n[upload_directory] folder_files grouping:")
     for folder_path, file_list in folder_files.items():
@@ -1323,28 +1437,28 @@ async def upload_directory(
         for file_path, file_obj, filename in file_list:
             print(f"    - {filename}")
     print()
-    
+
     # 创建目录结构和数据集
     created_datasets = []
-    
+
     for folder_path, file_list in folder_files.items():
         # 创建目录层级
         current_parent_id = base_folder_id
-        
-        if folder_path and folder_path != '.':
-            parts = folder_path.split('/')
+
+        if folder_path and folder_path != ".":
+            parts = folder_path.split("/")
             for part in parts:
                 if part:
                     current_parent_id = await get_or_create_folder(
                         db, part, current_parent_id, current_user.id
                     )
-        
+
         # 为每个数据文件创建数据集
         for file_path, file_obj, filename in file_list:
             if not is_data_file(filename):
                 # 资源文件（如图片）已保存，不创建 dataset
                 continue
-            
+
             # 检测格式
             if filename.endswith(".jsonl"):
                 format_type = DatasetFormat.JSONL
@@ -1356,11 +1470,13 @@ async def upload_directory(
                 format_type = DatasetFormat.TSV
             else:
                 continue
-            
+
             # 创建数据集
-            relative_file_path = os.path.relpath(file_path, settings.UPLOAD_DIR).replace("\\", "/")
+            relative_file_path = os.path.relpath(
+                file_path, settings.UPLOAD_DIR
+            ).replace("\\", "/")
             dataset_name = os.path.splitext(filename)[0]
-            
+
             dataset = Dataset(
                 name=dataset_name,
                 description=f"从目录上传: {folder_path or '根目录'}",
@@ -1372,7 +1488,7 @@ async def upload_directory(
             )
             db.add(dataset)
             await db.flush()
-            
+
             # 创建导入历史
             import_history = ImportHistory(
                 dataset_id=dataset.id,
@@ -1384,7 +1500,7 @@ async def upload_directory(
             )
             db.add(import_history)
             await db.flush()
-            
+
             # 添加后台任务
             background_tasks.add_task(
                 process_dataset_import,
@@ -1392,17 +1508,15 @@ async def upload_directory(
                 file_path,
                 False,  # not zip
                 format_type,
-                import_history.id
+                import_history.id,
             )
-            
-            created_datasets.append({
-                "id": dataset.id,
-                "name": dataset.name,
-                "folder_path": folder_path
-            })
-    
+
+            created_datasets.append(
+                {"id": dataset.id, "name": dataset.name, "folder_path": folder_path}
+            )
+
     await db.commit()
-    
+
     print(f"\n{'='*60}")
     print(f"[upload_directory] COMPLETE")
     print(f"  Total files received: {len(files)}")
@@ -1410,8 +1524,8 @@ async def upload_directory(
     print(f"  Datasets created: {len(created_datasets)}")
     print(f"  Created datasets: {[d['name'] for d in created_datasets]}")
     print(f"{'='*60}\n")
-    
+
     return {
         "message": f"成功上传 {len(created_datasets)} 个数据集",
-        "datasets": created_datasets
+        "datasets": created_datasets,
     }

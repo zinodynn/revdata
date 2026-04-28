@@ -6,8 +6,10 @@ import {
   ExportOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
@@ -22,6 +24,7 @@ import {
   InputNumber,
   message,
   Modal,
+  Progress,
   Radio,
   Row,
   Select,
@@ -34,6 +37,7 @@ import {
   Tabs,
   Tag,
   theme,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd'
@@ -41,7 +45,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import ReferenceDocsPanel from '../components/ReferenceDocsPanel'
-import { datasetsApi, exportApi, usersApi } from '../services/api'
+import { datasetsApi, exportApi, tasksApi, usersApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { useSettingsStore } from '../stores/settingsStore'
 
@@ -120,6 +124,11 @@ export default function DatasetDetailPage() {
   const [importHistories, setImportHistories] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
+  // 任务管理状态
+  const [datasetTasks, setDatasetTasks] = useState<any[]>([])
+  const [loadingTasks, setLoadingTasks] = useState(false)
+  const [taskStatusFilter, setTaskStatusFilter] = useState<string | undefined>(undefined)
+
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
 
   useEffect(() => {
@@ -130,6 +139,12 @@ export default function DatasetDetailPage() {
       fetchImportHistory()
     }
   }, [id])
+
+  useEffect(() => {
+    if (activeTab === 'tasks' && id) {
+      fetchDatasetTasks()
+    }
+  }, [activeTab, id])
 
   const fetchUsers = async () => {
     try {
@@ -144,7 +159,7 @@ export default function DatasetDetailPage() {
     try {
       const res = await datasetsApi.get(Number(id))
       setDataset(res.data)
-      
+
       // 初始化去重配置（支持三级优先级）
       if (res.data.dedup_config) {
         // 优先级 1：数据集级配置
@@ -316,6 +331,41 @@ export default function DatasetDetailPage() {
     } finally {
       setExporting(false)
     }
+  }
+
+  // 获取数据集任务列表
+  const fetchDatasetTasks = async () => {
+    if (!id) return
+    setLoadingTasks(true)
+    try {
+      const res = await datasetsApi.getTasks(Number(id))
+      setDatasetTasks(res.data.items)
+    } catch (error) {
+      console.error('获取任务列表失败', error)
+    } finally {
+      setLoadingTasks(false)
+    }
+  }
+
+  // 取消任务
+  const handleCancelTask = (taskId: number, assigneeName: string) => {
+    Modal.confirm({
+      title: '确认取消任务',
+      content: `取消后，分配给「${assigneeName}」的数据条目将被解除分配，此操作不可撤销。是否确认？`,
+      okText: '确认取消',
+      okType: 'danger',
+      cancelText: '关闭',
+      onOk: async () => {
+        try {
+          await tasksApi.cancel(taskId)
+          message.success('任务已取消')
+          fetchDatasetTasks()
+          fetchDataset()
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || '取消失败')
+        }
+      },
+    })
   }
 
   const handleTransfer = async () => {
@@ -498,7 +548,8 @@ export default function DatasetDetailPage() {
                     title: '跳过重复',
                     dataIndex: 'skipped_duplicates',
                     width: 100,
-                    render: (count: number) => (count > 0 ? <Tag color="orange">{count}</Tag> : '-'),
+                    render: (count: number) =>
+                      count > 0 ? <Tag color="orange">{count}</Tag> : '-',
                   },
                   {
                     title: '状态',
@@ -507,7 +558,10 @@ export default function DatasetDetailPage() {
                     render: (status: string, record: any) => {
                       const statusMap: any = {
                         importing: { color: 'processing', text: '导入中' },
-                        completed: { color: 'success', text: record.is_active ? '已完成' : '已撤销' },
+                        completed: {
+                          color: 'success',
+                          text: record.is_active ? '已完成' : '已撤销',
+                        },
                         failed: { color: 'error', text: '失败' },
                       }
                       const s = statusMap[status] || { color: 'default', text: status }
@@ -691,9 +745,7 @@ export default function DatasetDetailPage() {
                     min={0.5}
                     max={1.0}
                     step={0.05}
-                    onChange={(v) =>
-                      setDedupConfig({ ...dedupConfig, similarity_threshold: v })
-                    }
+                    onChange={(v) => setDedupConfig({ ...dedupConfig, similarity_threshold: v })}
                     marks={{ 0.5: '0.5', 0.8: '0.8', 1.0: '1.0' }}
                     disabled={!isAdmin}
                   />
@@ -702,9 +754,7 @@ export default function DatasetDetailPage() {
                 <Form.Item label="比较字段">
                   <Select
                     value={dedupConfig.query_field}
-                    onChange={(v) =>
-                      setDedupConfig({ ...dedupConfig, query_field: v })
-                    }
+                    onChange={(v) => setDedupConfig({ ...dedupConfig, query_field: v })}
                     disabled={!isAdmin}
                     style={{ width: 200 }}
                   >
@@ -722,19 +772,11 @@ export default function DatasetDetailPage() {
             {isAdmin && (
               <Form.Item>
                 <Space>
-                  <Button
-                    type="primary"
-                    onClick={handleSaveDedupConfig}
-                    loading={savingDedup}
-                  >
+                  <Button type="primary" onClick={handleSaveDedupConfig} loading={savingDedup}>
                     保存去重配置
                   </Button>
-                  <Button onClick={handleLoadDedupDefaults}>
-                    加载默认配置
-                  </Button>
-                  <Button onClick={handleSaveAsDefault}>
-                    保存为默认配置
-                  </Button>
+                  <Button onClick={handleLoadDedupDefaults}>加载默认配置</Button>
+                  <Button onClick={handleSaveAsDefault}>保存为默认配置</Button>
                 </Space>
               </Form.Item>
             )}
@@ -752,8 +794,155 @@ export default function DatasetDetailPage() {
           参考文档
         </span>
       ),
+      children: <ReferenceDocsPanel datasetId={dataset.id} readOnly={!isAdmin} />,
+    },
+    {
+      key: 'tasks',
+      label: (
+        <span>
+          <TeamOutlined />
+          任务管理
+        </span>
+      ),
       children: (
-        <ReferenceDocsPanel datasetId={dataset.id} readOnly={!isAdmin} />
+        <Card>
+          <Space style={{ marginBottom: 16 }}>
+            <Select
+              placeholder="筛选状态"
+              allowClear
+              style={{ width: 150 }}
+              value={taskStatusFilter}
+              onChange={(v) => setTaskStatusFilter(v)}
+            >
+              <Select.Option value="pending">待处理</Select.Option>
+              <Select.Option value="in_progress">进行中</Select.Option>
+              <Select.Option value="completed">已完成</Select.Option>
+              <Select.Option value="delegated">已委派</Select.Option>
+            </Select>
+            <Button icon={<ReloadOutlined />} onClick={fetchDatasetTasks} loading={loadingTasks}>
+              刷新
+            </Button>
+          </Space>
+          <Table
+            dataSource={datasetTasks.filter(
+              (t) => !taskStatusFilter || t.status === taskStatusFilter
+            )}
+            rowKey="id"
+            loading={loadingTasks}
+            size="small"
+            pagination={{ pageSize: 20 }}
+            columns={[
+              {
+                title: 'ID',
+                dataIndex: 'id',
+                width: 60,
+              },
+              {
+                title: '分配人',
+                dataIndex: 'assigner_name',
+                width: 120,
+                render: (name: string) => name || '-',
+              },
+              {
+                title: '被分配人',
+                dataIndex: 'assignee_name',
+                width: 120,
+                render: (name: string) => name || '-',
+              },
+              {
+                title: '范围',
+                width: 160,
+                render: (_: any, record: any) =>
+                  record.item_ids
+                    ? `指定 ${record.item_ids.length} 条`
+                    : `#${record.item_start} - #${record.item_end}`,
+              },
+              {
+                title: '状态',
+                dataIndex: 'status',
+                width: 100,
+                render: (s: string) => {
+                  const map: Record<string, { color: string; text: string }> = {
+                    pending: { color: 'default', text: '待处理' },
+                    in_progress: { color: 'processing', text: '进行中' },
+                    completed: { color: 'success', text: '已完成' },
+                    delegated: { color: 'warning', text: '已委派' },
+                  }
+                  const cfg = map[s] || { color: 'default', text: s }
+                  return <Tag color={cfg.color}>{cfg.text}</Tag>
+                },
+              },
+              {
+                title: '进度',
+                width: 160,
+                render: (_: any, record: any) => {
+                  const pct =
+                    record.total_items > 0
+                      ? Math.round((record.reviewed_items / record.total_items) * 100)
+                      : 0
+                  return (
+                    <Tooltip title={`${record.reviewed_items} / ${record.total_items}`}>
+                      <Progress percent={pct} size="small" style={{ width: 120 }} />
+                    </Tooltip>
+                  )
+                },
+              },
+              {
+                title: '委派来源',
+                dataIndex: 'delegated_from_task_id',
+                width: 100,
+                render: (v: number | null) => (v ? <Tag>任务 #{v}</Tag> : '-'),
+              },
+              {
+                title: '优先级',
+                dataIndex: 'priority',
+                width: 80,
+                render: (p: number) => {
+                  const map: Record<number, { color: string; text: string }> = {
+                    0: { color: 'default', text: '普通' },
+                    1: { color: 'orange', text: '高' },
+                    2: { color: 'red', text: '紧急' },
+                  }
+                  const cfg = map[p] || { color: 'default', text: String(p) }
+                  return <Tag color={cfg.color}>{cfg.text}</Tag>
+                },
+              },
+              {
+                title: '创建时间',
+                dataIndex: 'created_at',
+                width: 160,
+                render: (d: string) => new Date(d).toLocaleString(),
+              },
+              ...(isAdmin
+                ? [
+                    {
+                      title: '操作',
+                      width: 80,
+                      render: (_: any, record: any) =>
+                        record.status !== 'completed' ? (
+                          <Button
+                            type="link"
+                            size="small"
+                            danger
+                            onClick={() =>
+                              handleCancelTask(
+                                record.id,
+                                record.assignee_name || String(record.assignee_id)
+                              )
+                            }
+                          >
+                            取消
+                          </Button>
+                        ) : (
+                          '-'
+                        ),
+                    },
+                  ]
+                : []),
+            ]}
+            locale={{ emptyText: '暂无任务记录' }}
+          />
+        </Card>
       ),
     },
   ]
@@ -788,140 +977,135 @@ export default function DatasetDetailPage() {
           style={{ marginBottom: 16 }}
         />
 
-      <Card
-        title={
-          <Space>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/datasets')} />
-            <Title level={4} style={{ margin: 0 }}>
-              {dataset.name}
-            </Title>
-            <Tag color={statusColors[dataset.status]}>
-              {statusLabels[dataset.status] || dataset.status}
-            </Tag>
-          </Space>
-        }
-        extra={
-          <Space>
-            <Button
-              icon={<PlayCircleOutlined />}
-              type="primary"
-              onClick={() => navigate(`/datasets/${dataset.id}/review`)}
-            >
-              开始审核
-            </Button>
-            <Button
-              icon={<ExportOutlined />}
-              loading={exporting}
-              onClick={() => handleExport('jsonl')}
-            >
-              导出 JSONL
-            </Button>
-            {isAdmin && (
-              <Button icon={<EditOutlined />} onClick={() => setActiveTab('config')}>
-                配置映射
-              </Button>
-            )}
-            {isAdmin && (
-              <Button icon={<PlusOutlined />} onClick={() => setAppendModalOpen(true)}>
-                追加数据
-              </Button>
-            )}
-          </Space>
-        }
-      >
-        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
-      </Card>
-
-      <Modal
-        title="转移数据集所有权"
-        open={transferModalOpen}
-        onCancel={() => {
-          setTransferModalOpen(false)
-          setNewOwnerId(null)
-        }}
-        onOk={handleTransfer}
-        okButtonProps={{ disabled: !newOwnerId }}
-        okText="确定转移"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Typography.Text>请选择新的数据集所有者：</Typography.Text>
-        </div>
-        <Select
-          style={{ width: '100%' }}
-          placeholder="选择用户"
-          onChange={(value) => setNewOwnerId(value)}
-          value={newOwnerId}
-        >
-          {users
-            .filter(
-              (u) =>
-                u.id !== dataset?.owner_id &&
-                u.is_active &&
-                (u.role === 'admin' || u.role === 'super_admin'),
-            )
-            .map((u) => (
-              <Select.Option key={u.id} value={u.id}>
-                {u.username} ({u.role})
-              </Select.Option>
-            ))}
-        </Select>
-      </Modal>
-
-      {/* 追加导入模态框 */}
-      <Modal
-        title="追加导入数据"
-        open={appendModalOpen}
-        onCancel={() => {
-          setAppendModalOpen(false)
-          setAppendFile(null)
-          setAppendSkipDuplicates(false)
-        }}
-        onOk={handleAppend}
-        okText="开始导入"
-        cancelText="取消"
-        okButtonProps={{ disabled: !appendFile, loading: appending }}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Typography.Text>
-            当前数据集已有 <strong>{dataset?.item_count}</strong> 条数据，追加的数据将按序号接续。
-          </Typography.Text>
-        </div>
-        <Upload.Dragger
-          beforeUpload={(file) => {
-            setAppendFile(file)
-            return false
-          }}
-          showUploadList={!!appendFile}
-          fileList={
-            appendFile
-              ? [{ uid: '-1', name: appendFile.name, status: 'done' as const }]
-              : []
+        <Card
+          title={
+            <Space>
+              <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/datasets')} />
+              <Title level={4} style={{ margin: 0 }}>
+                {dataset.name}
+              </Title>
+              <Tag color={statusColors[dataset.status]}>
+                {statusLabels[dataset.status] || dataset.status}
+              </Tag>
+            </Space>
           }
-          onRemove={() => setAppendFile(null)}
-          accept=".jsonl,.json,.csv,.tsv"
-          maxCount={1}
+          extra={
+            <Space>
+              <Button
+                icon={<PlayCircleOutlined />}
+                type="primary"
+                onClick={() => navigate(`/datasets/${dataset.id}/review`)}
+              >
+                开始审核
+              </Button>
+              <Button
+                icon={<ExportOutlined />}
+                loading={exporting}
+                onClick={() => handleExport('jsonl')}
+              >
+                导出 JSONL
+              </Button>
+              {isAdmin && (
+                <Button icon={<EditOutlined />} onClick={() => setActiveTab('config')}>
+                  配置映射
+                </Button>
+              )}
+              {isAdmin && (
+                <Button icon={<PlusOutlined />} onClick={() => setAppendModalOpen(true)}>
+                  追加数据
+                </Button>
+              )}
+            </Space>
+          }
         >
-          <p className="ant-upload-text">点击或拖拽文件到此处</p>
-          <p className="ant-upload-hint">支持 JSONL、JSON、CSV、TSV 格式</p>
-        </Upload.Dragger>
-        <div style={{ marginTop: 16 }}>
-          <Space>
-            <Switch
-              checked={appendSkipDuplicates}
-              onChange={setAppendSkipDuplicates}
-            />
-            <Typography.Text>跳过重复项（基于去重设置）</Typography.Text>
-          </Space>
-          {appendSkipDuplicates && !dedupConfig?.enabled && (
-            <div style={{ marginTop: 8 }}>
-              <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                ⚠ 未配置去重规则，将使用默认文本相似度(阈值0.8)进行去重
-              </Typography.Text>
-            </div>
-          )}
-        </div>
-      </Modal>
+          <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
+        </Card>
+
+        <Modal
+          title="转移数据集所有权"
+          open={transferModalOpen}
+          onCancel={() => {
+            setTransferModalOpen(false)
+            setNewOwnerId(null)
+          }}
+          onOk={handleTransfer}
+          okButtonProps={{ disabled: !newOwnerId }}
+          okText="确定转移"
+          cancelText="取消"
+        >
+          <div style={{ marginBottom: 16 }}>
+            <Typography.Text>请选择新的数据集所有者：</Typography.Text>
+          </div>
+          <Select
+            style={{ width: '100%' }}
+            placeholder="选择用户"
+            onChange={(value) => setNewOwnerId(value)}
+            value={newOwnerId}
+          >
+            {users
+              .filter(
+                (u) =>
+                  u.id !== dataset?.owner_id &&
+                  u.is_active &&
+                  (u.role === 'admin' || u.role === 'super_admin')
+              )
+              .map((u) => (
+                <Select.Option key={u.id} value={u.id}>
+                  {u.username} ({u.role})
+                </Select.Option>
+              ))}
+          </Select>
+        </Modal>
+
+        {/* 追加导入模态框 */}
+        <Modal
+          title="追加导入数据"
+          open={appendModalOpen}
+          onCancel={() => {
+            setAppendModalOpen(false)
+            setAppendFile(null)
+            setAppendSkipDuplicates(false)
+          }}
+          onOk={handleAppend}
+          okText="开始导入"
+          cancelText="取消"
+          okButtonProps={{ disabled: !appendFile, loading: appending }}
+        >
+          <div style={{ marginBottom: 16 }}>
+            <Typography.Text>
+              当前数据集已有 <strong>{dataset?.item_count}</strong> 条数据，追加的数据将按序号接续。
+            </Typography.Text>
+          </div>
+          <Upload.Dragger
+            beforeUpload={(file) => {
+              setAppendFile(file)
+              return false
+            }}
+            showUploadList={!!appendFile}
+            fileList={
+              appendFile ? [{ uid: '-1', name: appendFile.name, status: 'done' as const }] : []
+            }
+            onRemove={() => setAppendFile(null)}
+            accept=".jsonl,.json,.csv,.tsv"
+            maxCount={1}
+          >
+            <p className="ant-upload-text">点击或拖拽文件到此处</p>
+            <p className="ant-upload-hint">支持 JSONL、JSON、CSV、TSV 格式</p>
+          </Upload.Dragger>
+          <div style={{ marginTop: 16 }}>
+            <Space>
+              <Switch checked={appendSkipDuplicates} onChange={setAppendSkipDuplicates} />
+              <Typography.Text>跳过重复项（基于去重设置）</Typography.Text>
+            </Space>
+            {appendSkipDuplicates && !dedupConfig?.enabled && (
+              <div style={{ marginTop: 8 }}>
+                <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                  ⚠ 未配置去重规则，将使用默认文本相似度(阈值0.8)进行去重
+                </Typography.Text>
+              </div>
+            )}
+          </div>
+        </Modal>
       </div>
     </ConfigProvider>
   )

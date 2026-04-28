@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, field_validator
 
-from app.models.data_item import ItemStatus, ItemType
+from app.models.data_item import ItemStatus, ItemType, ItemSource
 
 
 class DataItemResponse(BaseModel):
@@ -15,6 +15,8 @@ class DataItemResponse(BaseModel):
     current_content: Dict[str, Any]
     status: ItemStatus
     is_marked: bool = False
+    source: ItemSource = ItemSource.IMPORTED
+    added_by: Optional[int]
     assigned_to: Optional[int]
     reviewed_by: Optional[int]
     reviewed_at: Optional[datetime]
@@ -38,6 +40,12 @@ class DataItemUpdate(BaseModel):
     status: Optional[ItemStatus] = None
     is_marked: Optional[bool] = None
     comment: Optional[str] = None  # 修改说明
+
+
+class DataItemCreate(BaseModel):
+    dataset_id: int
+    item_type: ItemType = ItemType.QA
+    content: Dict[str, Any]
 
 
 class DataItemListResponse(BaseModel):

@@ -233,14 +233,28 @@ export default function DatasetsPage() {
     form.resetFields()
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number, force = false) => {
     try {
-      await datasetsApi.delete(id)
+      await datasetsApi.delete(id, force || undefined)
       message.success('数据集已删除')
       fetchDatasets(selectedFolderId)
       setFolderRefreshTrigger((prev) => prev + 1)
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '删除失败')
+      const detail: string = error.response?.data?.detail || ''
+      const match = detail.match(/还有\s*(\d+)\s*个未完成的任务/)
+      if (match && !force) {
+        const count = match[1]
+        Modal.confirm({
+          title: '数据集存在未完成任务',
+          content: `该数据集有 ${count} 个未完成的任务，确认删除将自动取消这些任务并解除分配。是否确认继续删除？`,
+          okText: '确认删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => handleDelete(id, true),
+        })
+      } else {
+        message.error(detail || '删除失败')
+      }
     }
   }
 

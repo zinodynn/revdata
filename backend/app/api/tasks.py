@@ -513,3 +513,58 @@ async def list_users_for_delegation(
         {"id": u.id, "username": u.username, "email": u.email, "role": u.role.value}
         for u in users
     ]
+
+
+@router.delete("/{task_id}")
+async def cancel_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """取消/删除任务（分配人或管理员可操作）"""
+    from app.models.user import UserRole
+
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
+
+    # 权限：任务分配人 或 管理员/超级管理员
+    is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.ADMIN)
+    if not is_admin and task.assigner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有任务分配人或管理员可以取消任务",
+        )
+
+    # 解除对应数据条目的分配
+    if task.item_ids:
+        await db.execute(
+            DataItem.__table__.update()
+            .where(
+                and_(
+                    DataItem.id.in_(task.item_ids),
+                    DataItem.assigned_to == task.assignee_id,
+                )
+            )
+            .values(assigned_to=None)
+        )
+    else:
+        await db.execute(
+            DataItem.__table__.update()
+            .where(
+                and_(
+                    DataItem.dataset_id == task.dataset_id,
+                    DataItem.seq_num >= task.item_start,
+                    DataItem.seq_num <= task.item_end,
+                    DataItem.assigned_to == task.assignee_id,
+                )
+            )
+            .values(assigned_to=None)
+        )
+
+    await db.delete(task)
+    await db.commit()
+
+    return {"message": "任务已取消"}
