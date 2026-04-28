@@ -86,7 +86,10 @@ export const datasetsApi = {
     endDate?: string
   ) => {
     const params: any = { page, page_size: pageSize }
-    if (folderId !== undefined && folderId !== null) params.folder_id = folderId
+    if (folderId !== undefined && folderId !== null) {
+      params.folder_id = folderId
+      params.recursive = true
+    }
     if (keyword) params.keyword = keyword
     if (status) params.status = status
     if (format) params.format = format
@@ -254,6 +257,12 @@ export const exportApi = {
       params: options,
       responseType: 'blob',
     }),
+  batch: (request: {
+    dataset_ids: number[]
+    format: string
+    status_filter?: string
+    include_original?: boolean
+  }) => api.post('/export/batch', request, { responseType: 'blob' }),
 }
 
 // Users API (管理员)

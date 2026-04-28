@@ -1,4 +1,4 @@
-import { FolderOpenOutlined, FolderOutlined, PlusOutlined } from '@ant-design/icons'
+import { ExportOutlined, FolderOpenOutlined, FolderOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Dropdown, Empty, message, Spin, Tree } from 'antd'
 import type { DataNode, TreeProps } from 'antd/es/tree'
 import { useEffect, useState } from 'react'
@@ -18,6 +18,7 @@ interface FolderTreeProps {
   onCreateFolder: (parentId: number | null) => void
   onRenameFolder: (folder: { id: number; name: string }) => void
   onDeleteFolder: (folderId: number) => void
+  onExportFolder?: (folderId: number | null) => void
   refreshTrigger?: number
 }
 
@@ -27,6 +28,7 @@ export default function FolderTree({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  onExportFolder,
   refreshTrigger,
 }: FolderTreeProps) {
   const [loading, setLoading] = useState(false)
@@ -70,6 +72,13 @@ export default function FolderTree({
               },
               { type: 'divider' },
               {
+                key: 'export',
+                label: '导出',
+                icon: <ExportOutlined />,
+                onClick: () => onExportFolder?.(node.id),
+              },
+              { type: 'divider' },
+              {
                 key: 'delete',
                 label: '删除',
                 danger: true,
@@ -104,6 +113,12 @@ export default function FolderTree({
                 key: 'create',
                 label: '新建目录',
                 onClick: () => onCreateFolder(null),
+              },
+              {
+                key: 'export-all',
+                label: '导出全部数据集',
+                icon: <ExportOutlined />,
+                onClick: () => onExportFolder?.(null),
               },
             ],
           }}

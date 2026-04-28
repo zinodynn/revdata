@@ -1,5 +1,7 @@
 import {
+  CheckSquareOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   ExportOutlined,
   EyeOutlined,
   FolderOutlined,
@@ -23,6 +25,7 @@ import {
   message,
   Modal,
   Row,
+  Select,
   Space,
   Spin,
   Steps,
@@ -32,7 +35,7 @@ import {
   Typography,
   Upload,
 } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCodeModal from '../components/AuthCodeModal'
 import CreateFolderModal from '../components/CreateFolderModal'
@@ -41,7 +44,7 @@ import DirectoryUploadModal from '../components/DirectoryUploadModal'
 import FieldMappingConfig, { FieldMapping, ReviewConfig } from '../components/FieldMappingConfig'
 import FolderTree from '../components/FolderTree'
 import MoveFolderModal from '../components/MoveFolderModal'
-import { datasetsApi, foldersApi } from '../services/api'
+import { datasetsApi, exportApi, foldersApi } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 
 const { Title } = Typography
@@ -120,6 +123,14 @@ export default function DatasetsPage() {
   const [dateRange, setDateRange] = useState<[any, any] | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
   const [formatFilter, setFormatFilter] = useState<string | undefined>(undefined)
+
+  // 多选 & 批量导出状态
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [exportModalOpen, setExportModalOpen] = useState(false)
+  const [exportModalDatasetIds, setExportModalDatasetIds] = useState<number[]>([])
+  const [exportFormat, setExportFormat] = useState('jsonl')
+  const [exportStatusFilter, setExportStatusFilter] = useState<string>('')
+  const [batchExporting, setBatchExporting] = useState(false)
 
   const fetchDatasets = async (
     folderId?: number | null,
@@ -315,6 +326,113 @@ export default function DatasetsPage() {
     setMoveFolderModalOpen(true)
   }
 
+  // 下载 Blob 文件工具
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  // 单个数据集直接导出
+  const handleExportSingle = async (
+    datasetId: number,
+    datasetName: string,
+    format: string,
+    statusFilter?: string
+  ) => {
+    try {
+      const res = await exportApi.download(datasetId, {
+        format,
+        status_filter: statusFilter,
+        include_original: false,
+      })
+      const ext = format
+      const suffix = statusFilter ? `_${statusFilter}` : ''
+      triggerDownload(new Blob([res.data]), `${datasetName}${suffix}_export.${ext}`)
+      message.success('导出成功')
+    } catch {
+      message.error('导出失败')
+    }
+  }
+
+  // 打开批量/目录导出弹窗
+  const openExportModal = (ids: number[]) => {
+    setExportModalDatasetIds(ids)
+    setExportFormat('jsonl')
+    setExportStatusFilter('modified')
+    setExportModalOpen(true)
+  }
+
+  // 确认批量导出
+  const handleExportConfirm = async () => {
+    if (exportModalDatasetIds.length === 0) return
+    setBatchExporting(true)
+    try {
+      const res = await exportApi.batch({
+        dataset_ids: exportModalDatasetIds,
+        format: exportFormat,
+        status_filter: exportStatusFilter || undefined,
+        include_original: false,
+      })
+      const filename =
+        exportModalDatasetIds.length === 1
+          ? `dataset_${exportModalDatasetIds[0]}_export.${exportFormat}`
+          : `batch_export_${exportModalDatasetIds.length}_datasets.zip`
+      triggerDownload(new Blob([res.data]), filename)
+      message.success('导出成功')
+      setExportModalOpen(false)
+    } catch {
+      message.error('导出失败')
+    } finally {
+      setBatchExporting(false)
+    }
+  }
+
+  // 目录导出
+  const handleExportFolder = async (folderId: number | null) => {
+    try {
+      const res = await datasetsApi.list(1, 1000, folderId)
+      const ids: number[] = res.data.items.map((d: Dataset) => d.id)
+      if (ids.length === 0) {
+        message.warning('该目录下没有数据集')
+        return
+      }
+      openExportModal(ids)
+    } catch {
+      message.error('获取数据集列表失败')
+    }
+  }
+
+  // 批量删除选中
+  const handleBatchDelete = () => {
+    const ids = selectedRowKeys as number[]
+    if (ids.length === 0) return
+    Modal.confirm({
+      title: `确定要删除选中的 ${ids.length} 个数据集吗？`,
+      content: '删除后将无法恢复，且会同时删除所有相关的任务和授权码。',
+      okText: '确定删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        const errors: string[] = []
+        for (const id of ids) {
+          try {
+            await handleDelete(id)
+          } catch {
+            errors.push(String(id))
+          }
+        }
+        setSelectedRowKeys([])
+        if (errors.length > 0) {
+          message.warning(`${ids.length - errors.length} 个已删除，${errors.length} 个失败`)
+        }
+      },
+    })
+  }
+
   const columns = [
     {
       title: 'ID',
@@ -411,7 +529,36 @@ export default function DatasetsPage() {
                       key: 'export',
                       icon: <ExportOutlined />,
                       label: '导出',
-                      onClick: () => navigate(`/datasets/${record.id}`),
+                      children: [
+                        {
+                          key: 'export-jsonl-all',
+                          label: 'JSONL（全部）',
+                          onClick: () => handleExportSingle(record.id, record.name, 'jsonl'),
+                        },
+                        {
+                          key: 'export-json-all',
+                          label: 'JSON（全部）',
+                          onClick: () => handleExportSingle(record.id, record.name, 'json'),
+                        },
+                        {
+                          key: 'export-csv-all',
+                          label: 'CSV（全部）',
+                          onClick: () => handleExportSingle(record.id, record.name, 'csv'),
+                        },
+                        { type: 'divider' as const },
+                        {
+                          key: 'export-jsonl-modified',
+                          label: 'JSONL（仅已修改）',
+                          onClick: () =>
+                            handleExportSingle(record.id, record.name, 'jsonl', 'modified'),
+                        },
+                        {
+                          key: 'export-json-modified',
+                          label: 'JSON（仅已修改）',
+                          onClick: () =>
+                            handleExportSingle(record.id, record.name, 'json', 'modified'),
+                        },
+                      ],
                     },
                     {
                       key: 'move',
@@ -482,6 +629,7 @@ export default function DatasetsPage() {
               onCreateFolder={(parentId) => handleCreateFolder(parentId)}
               onRenameFolder={handleRenameFolder}
               onDeleteFolder={handleDeleteFolder}
+              onExportFolder={handleExportFolder}
               refreshTrigger={folderRefreshTrigger}
             />
           </Card>
@@ -569,12 +717,53 @@ export default function DatasetsPage() {
                 <Tag color="blue">显示 {filteredDatasets.length} 个数据集</Tag>
               </Space>
             </div>
+
+            {/* 批量操作工具栏 */}
+            {selectedRowKeys.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 8,
+                  padding: '8px 12px',
+                  background: '#e6f4ff',
+                  borderRadius: 6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                <CheckSquareOutlined style={{ color: '#1677ff' }} />
+                <span style={{ color: '#1677ff', fontWeight: 500 }}>
+                  已选择 {selectedRowKeys.length} 个数据集
+                </span>
+                <Button
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() => openExportModal(selectedRowKeys as number[])}
+                >
+                  导出选中
+                </Button>
+                {isAdmin && (
+                  <Button size="small" danger icon={<DeleteOutlined />} onClick={handleBatchDelete}>
+                    删除选中
+                  </Button>
+                )}
+                <Button size="small" type="text" onClick={() => setSelectedRowKeys([])}>
+                  取消选择
+                </Button>
+              </div>
+            )}
+
             <Table
               columns={columns}
               dataSource={filteredDatasets}
               rowKey="id"
               loading={loading}
               pagination={{ pageSize: 20 }}
+              rowSelection={{
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys),
+                preserveSelectedRowKeys: true,
+              }}
             />
           </Card>
         </Col>
@@ -585,6 +774,53 @@ export default function DatasetsPage() {
         onClose={() => setAuthCodeModalOpen(false)}
         datasetId={selectedDatasetId || 0}
       />
+
+      {/* 批量导出弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <DownloadOutlined />
+            {exportModalDatasetIds.length > 1
+              ? `导出 ${exportModalDatasetIds.length} 个数据集`
+              : '导出数据集'}
+          </Space>
+        }
+        open={exportModalOpen}
+        onOk={handleExportConfirm}
+        onCancel={() => setExportModalOpen(false)}
+        confirmLoading={batchExporting}
+        okText="开始导出"
+        cancelText="取消"
+        width={420}
+      >
+        <Space direction="vertical" style={{ width: '100%', marginTop: 8 }} size="middle">
+          <div>
+            <div style={{ marginBottom: 6, fontWeight: 500 }}>导出格式</div>
+            <Select value={exportFormat} onChange={setExportFormat} style={{ width: '100%' }}>
+              <Select.Option value="jsonl">JSONL（推荐）</Select.Option>
+              <Select.Option value="json">JSON</Select.Option>
+              <Select.Option value="csv">CSV</Select.Option>
+            </Select>
+          </div>
+          <div>
+            <div style={{ marginBottom: 6, fontWeight: 500 }}>数据范围</div>
+            <Select
+              value={exportStatusFilter}
+              onChange={setExportStatusFilter}
+              style={{ width: '100%' }}
+            >
+              <Select.Option value="">全部条目</Select.Option>
+              <Select.Option value="modified">仅已修改（审批更改后）</Select.Option>
+              <Select.Option value="approved">仅已通过</Select.Option>
+              <Select.Option value="rejected">仅已拒绝</Select.Option>
+              <Select.Option value="pending">仅待审核</Select.Option>
+            </Select>
+          </div>
+          {exportModalDatasetIds.length > 1 && (
+            <div style={{ color: '#888', fontSize: 12 }}>多个数据集将打包为 ZIP 文件下载</div>
+          )}
+        </Space>
+      </Modal>
 
       <DelegateModal
         open={delegateModalOpen}

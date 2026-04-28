@@ -438,6 +438,7 @@ async def list_datasets(
     page: int = 1,
     page_size: int = 20,
     folder_id: Optional[int] = None,
+    recursive: bool = False,
     keyword: Optional[str] = None,
     status: Optional[str] = None,
     format: Optional[str] = None,
@@ -451,6 +452,7 @@ async def list_datasets(
 
     参数：
     - folder_id: 按目录筛选
+    - recursive: 是否递归包含子目录的数据集
     - keyword: 关键词搜索（名称或描述）
     - status: 按状态筛选
     - format: 按格式筛选
@@ -464,7 +466,21 @@ async def list_datasets(
 
     # 目录筛选
     if folder_id is not None:
-        conditions.append(Dataset.folder_id == folder_id)
+        if recursive:
+            # 递归收集所有子目录 ID
+            all_folder_ids = [folder_id]
+            queue = [folder_id]
+            while queue:
+                batch = queue.pop()
+                child_result = await db.execute(
+                    select(Folder.id).where(Folder.parent_id == batch)
+                )
+                child_ids = [row[0] for row in child_result.fetchall()]
+                all_folder_ids.extend(child_ids)
+                queue.extend(child_ids)
+            conditions.append(Dataset.folder_id.in_(all_folder_ids))
+        else:
+            conditions.append(Dataset.folder_id == folder_id)
 
     # 关键词搜索
     if keyword:
